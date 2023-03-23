@@ -72,9 +72,10 @@ class Sftp:
         print(f'List of files at location {remote_path}:')
         print([f for f in self.connection.listdir(remote_path)])
 
+
 # --TODO-- optimiser le parcours des fichiers avec la regex.
 #    Là, parcourue une fois par listdir_attr + test sur chaque item par la regex. Faire le filtre dès list_dir
-    def download_folder(self, remote_path: str, dest_path: str, limit_download_size: int, ext: str = '', limit_nb_subrep: int = 10, force: bool = False):
+    def download_folder(self, remote_path: str, dest_path: str, limit_download_size: int, ext: str = '', limit_nb_subrep: int = 1300, force: bool = False):
 
         # --TODO-- vérifier la longueur de 'ext' et renvoyer une erreur. si vide, prendre tous les fichiers
 
