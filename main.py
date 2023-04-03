@@ -171,19 +171,34 @@ def print_menu():
 
 '''Shapefile operations'''
 def shp_total():
-    get_processed_tiles_total_vect('')
+    try:
+        get_processed_tiles_total_vect('')
+        print('general shp created.')
+    except:
+        print('error while creating general shp file.')
 
 def shp_indices():
-    get_processed_indices_vect('')
-
+    try:
+        get_processed_indices_vect('')
+        print('shp by indices created.')
+    except:
+        print('error while creating shp by indices.')
 def shp_tuile():
-    get_processed_tile_vect('download/shp', '40KCB')
+    try:
+        get_processed_tile_vect('download/shp', '40KCB')
+        print('shp by tile created.')
+    except:
+        print('error while creating shp by tile')
 
 def csv_tuile_indice():
     # 38KQE Madagascar - 40KCB Réunion
     indices_tiles = {'NDVI': ['40KCB'], 'NDWIGAO': ['40KCB'], 'MNDWI': ['40KCB']}
-    create_metadata_csv_file(indices_tiles, 'METADATA_SEN2CHAIN', 'download/METADATA_SEN2CHAIN_tuiles-indices_static.csv')
 
+    try:
+        create_metadata_csv_file(indices_tiles, 'METADATA_SEN2CHAIN', 'download/METADATA_SEN2CHAIN_tuiles-indices_static.csv')
+        print('metadata file created.')
+    except:
+        print('error while creating metadata file')
 
 if __name__ == '__main__':
     sftp = Sftp(
@@ -192,7 +207,55 @@ if __name__ == '__main__':
         password='achanger'
     )
 
+
+    # 38KQE Madagascar - 40KCB Réunion
+    #indices_tiles = {'NDVI': ['40KCB'], 'NDWIGAO': ['40KCB'], 'MNDWI': ['40KCB']}
+    #download_sentinel1_indices(sftp, indices_tiles)
+
+    ''' Open tif files '''
+    # tif_path1 = 'download/ql/NDVI/40KCB/S2A_MSIL2A_20160417T063512_N0201_R134_T40KCB_20160417T063510/S2A_MSIL2A_20160417T063512_N0201_R134_T40KCB_20160417T063510_NDVI_CM001_QL.tif'
+    # tif_path2 = 'download/ql/NDVI/40KCB/S2A_MSIL2A_20161123T063512_N0204_R134_T40KCB_20161123T063507/S2A_MSIL2A_20161123T063512_N0204_R134_T40KCB_20161123T063507_NDVI_CM001_QL.tif'
+    # ds_tif1 = gdal.Open(tif_path1)
+    # ds_tif2 = gdal.Open(tif_path2)
+    # print('---TIFF---\n', ds_tif1, '\n', ds_tif2)
+    #
+    ''' Properly close the datasets to flush to disk'''
+    # ds_tif1.close()
+    # ds_tif2.close() # = None
+
+    # gdal.GetJPEG2000Structure()
+    # gdal.FindFile()
+
+    logo_g2oi = """
+        /$$$$$$   /$$$$$$   /$$$$$$  /$$$$$$
+       /$$__  $$ /$$__  $$ /$$__  $$|_  $$_/
+      | $$  \__/|__/  \ $$| $$  \ $$  | $$  
+      | $$ /$$$$  /$$$$$$/| $$  | $$  | $$  
+      | $$|_  $$ /$$____/ | $$  | $$  | $$  
+      | $$  \ $$| $$      | $$  | $$  | $$  
+      |  $$$$$$/| $$$$$$$$|  $$$$$$/ /$$$$$$
+       \______/ |________/ \______/ |______/
+                            
+        Grand Observatoire de l'Océan Indien
+    """
+    logo_sen2val = """
+    ___________________________________
+                    ____             _ 
+     ___  ___ _ __ |___ \__   ____ _| |
+    / __|/ _ \ '_ \  __) \ \ / / _` | |
+    \__ \  __/ | | |/ __/ \ V / (_| | |
+    |___/\___|_| |_|_____| \_/ \__,_|_|
+    ___________________________________
+Script mettant en place une chaîne de traitement 
+pour la valorisation et l'accès aux données issue
+            de sen2chain
+        corentin.souton@ird.fr
+    """
+    print(logo_g2oi)
+    print(logo_sen2val)
+
     while (True):
+
         print_menu()
         option = ''
         try:
@@ -213,35 +276,3 @@ if __name__ == '__main__':
             exit()
         else:
             print('Invalid option. Please enter a number between 0 and 4.')
-
-    # 38KQE Madagascar - 40KCB Réunion
-    #indices_tiles = {'NDVI': ['40KCB'], 'NDWIGAO': ['40KCB'], 'MNDWI': ['40KCB']}
-    #download_sentinel1_indices(sftp, indices_tiles)
-
-    ''' Open tif files '''
-    # tif_path1 = 'download/ql/NDVI/40KCB/S2A_MSIL2A_20160417T063512_N0201_R134_T40KCB_20160417T063510/S2A_MSIL2A_20160417T063512_N0201_R134_T40KCB_20160417T063510_NDVI_CM001_QL.tif'
-    # tif_path2 = 'download/ql/NDVI/40KCB/S2A_MSIL2A_20161123T063512_N0204_R134_T40KCB_20161123T063507/S2A_MSIL2A_20161123T063512_N0204_R134_T40KCB_20161123T063507_NDVI_CM001_QL.tif'
-    # ds_tif1 = gdal.Open(tif_path1)
-    # ds_tif2 = gdal.Open(tif_path2)
-    # print('---TIFF---\n', ds_tif1, '\n', ds_tif2)
-    #
-    ''' Properly close the datasets to flush to disk'''
-    # ds_tif1 = None
-    # ds_tif2 = None
-
-    # gdal.GetJPEG2000Structure()
-    # gdal.FindFile()
-
-    '''netcdfs to csv'''
-    # dict_csv = {'paths': [path_to_create + nc_filename1, path_to_create + nc_filename2], 'type': ['netcdf', 'netcdf']}
-    # df_csv = pandas.DataFrame(data=dict_csv)
-    # df_csv.to_csv(path_to_create + '/pandacsv.csv', mode='r')
-    # df_csv.close()
-
-
-    # shp = Shape()
-    # data = shp.read_shp(r'./download/shp/niv1_tuiles_total.shp')
-    # print(data)
-
-    # shp.write_shp(r'../data/chn_adm2_bak.shp', [spatialref, geomtype, geomlist, fieldlist, reclist])
-    # data = None

@@ -94,3 +94,11 @@ class Shape:
 
         ''' close '''
         ds.Destroy()
+
+
+    # shp = Shape()
+    # data = shp.read_shp(r'./download/shp/niv1_tuiles_total.shp')
+    # print(data)
+
+    # shp.write_shp(r'../data/chn_adm2_bak.shp', [spatialref, geomtype, geomlist, fieldlist, reclist])
+    # data = None

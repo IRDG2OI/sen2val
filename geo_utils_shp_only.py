@@ -12,6 +12,7 @@ from sen2chain.tiles import Tile
 
 TILES_INDEX = SHARED_DATA.get('tiles_index')
 TILES_INDEX_DICT = SHARED_DATA.get('tiles_index_dict')
+DEBUG = True
 
 ''' Module for manipulating the Sentinel-2 tiles index geopackage file. '''
 
@@ -320,6 +321,10 @@ Returns a vector file of data processed tiles
 ------------------------------
 '''
 def get_processed_tile_vect(out_folder: str = None, tile_name:str = None):
+
+    if DEBUG:
+        print('get_processed_tile_vect')
+
     if not out_folder:
         out_folder = 'download/shp'
 
@@ -339,6 +344,10 @@ def get_processed_tile_vect(out_folder: str = None, tile_name:str = None):
     # }
 
     lib = Library()
+
+    if DEBUG:
+        print('list indice', lib.indices)
+
     list_tiles_name = {
         t
         for c in (
@@ -363,9 +372,13 @@ def get_processed_tile_vect(out_folder: str = None, tile_name:str = None):
         'mndwi': 0
     }
     tile = Tile(tile_name)
+
+    if DEBUG:
+        print('tile', tile)
+
     for p in ['ndvi', 'ndwigao', 'mndwi']:
         try:
-            tile_count[tile_name][p] = len(getattr(tile, p).cm001)
+            tile_count[tile_name][p] = len(getattr(tile, p).masks.cm001)
         except:
             pass
 
@@ -454,4 +467,5 @@ def get_processed_tile_vect(out_folder: str = None, tile_name:str = None):
     fill_fields(out_layer)
     out_layer = None
     del input_layer_ds, input_layer_lyr, out_layer, out_ds
-
+    if DEBUG:
+        print('exit get_processed_tile_vect')
