@@ -4,6 +4,13 @@ import pandas
 import geopandas
 import xarray
 from datetime import date
+import subprocess
+import numpy
+
+import rasterio
+
+import cv2
+#include <opencv2/imgcodecs.hpp>
 
 from osgeo import gdal
 
@@ -48,31 +55,93 @@ def download_sentinel1_indices(sftp: Sftp, indices_tiles: dict, path_to_dl: str 
 
     sftp.disconnect()
 
+def jpeg_to_netcdf(path_to_create: str = 'download/nc/', nc_filename: str = 'gdal_nc'):
 
-def tiff_to_netcdf(tif_path: str, path_to_create: str = 'download/nc/', nc_filename: str = 'gdal_ncdf'):
+    img_path1 = 'download/src/NDVI/40KCB/S2A_MSIL2A_20200107T063501_N0208_R134_T40KCB_20200107T075034/S2A_MSIL2A_20200107T063501_N0208_R134_T40KCB_20200107T075034_NDVI.jp2'
+    img_path2 = 'download/src/NDVI/40KCB/S2A_MSIL2A_20200127T063501_N0208_R134_T40KCB_20200127T075758/S2A_MSIL2A_20200127T063501_N0208_R134_T40KCB_20200127T075758_NDVI.jp2'
+    img_path3 = 'download/src/NDVI/40KCB/ S2A_MSIL2A_20200206T063501_N0209_R134_T40KCB_20200206T075850/S2A_MSIL2A_20200206T063501_N0209_R134_T40KCB_20200206T075850_NDVI.jp2'
+
+    img1 = cv2.imread(img_path1, -1) #IMREAD_UNCHANGED
+    print(img1)
 
     os.makedirs(path_to_create, exist_ok=True)
 
     '''creating empty netcdf'''
-    ds_nc = netCDF4.Dataset(path_to_create + nc_filename + '.nc',
+    ds_nc = netCDF4.Dataset(path_to_create + 'netcdf4.nc',
                              mode='w')  # 'w' will clobber any existing data (unless clobber=False is used, in which case an exception is raised if the file already exists).
+    ds_nc.title = 'netCDF4 product'
 
-    print('\n---NC SHELL---\n', ds_nc)
+    print('\n---NC EMPTY---\n', ds_nc)
 
-    # --TODO--
-    # # create nc files from tif with gdal
-    # subprocess.call('gdal_translate -of netCDF -co 'FORMAT=NC4' ''+tif_path + '' '' + path_to_create+nc_filename+''')
-    # gdal.Translate(path_to_create + nc_filename2, ds_tif2, format='NetCDF')
-    #
-    # print('\n---NC FULL---\n', ds_nc)
-    #
-    # for dimension in ds_nc1.dimensions.values():
-    #     print(dimension)
-    #
+
+    # create nc files from tif with gdal
+    #subprocess.call('gdalinfo '+img_path1)
+    #subprocess.call('gdal_translate -of netCDF -co FORMAT=NC4 '+img_path1+' ' + path_to_create + 'gdal_python.nc')
+
+    #ds_jp2 = gdal.Open(img_path1)
+    #ds_jp2 = gdal.Translate(path_to_create + 'gdal_python.nc', img_path1, format='NetCDF')
+    #ds_jp2.title = 'GDAL Translate python product'
+
+    ds_jp2 = rasterio.open(img_path1)
+
+    print('\n--- JP2 ---\n', ds_jp2)
+    #print(ds_jp2.width)
+    #print(ds_jp2.height)
+    #print(ds_jp2.indexes)
+    print(ds_jp2.bounds)
+
+    jp2_band1 = ds_jp2.read(1) # bands are indexed from 1
+    #print(band1)
+
+    height = jp2_band1.shape[0]
+    width = jp2_band1.shape[1]
+
+    # Dimensions
+    ds_nc.createDimension('time', 3)
+    ds_nc.createDimension('lat', ds_jp2.width)
+    ds_nc.createDimension('lon', ds_jp2.height)
+
+    # Variables
+    time = ds_nc.createVariable('time', 'i', ('time',), zlib=True)
+    lat = ds_nc.createVariable('lat', 'f4', ('lat',), zlib=True)
+    lon = ds_nc.createVariable('lon', 'f4', ('lon',), zlib=True)
+    band = ds_nc.createVariable('band1', 'f4', ('time', 'lat', 'lon',), zlib=True)
+
+    ds_nc.createVariable('crs', 'i2', [])
+    ds_nc['crs'].grid_mapping_name = "latitude_longitude"
+    crs = ds_jp2.crs
+    ds_nc['crs'].epsg_code = str(crs)
+    
+
+    # Attributes
+    time.units = 'decades since 1950'
+    time.axis = 'T'
+    lat.units = 'degrees north'
+    lat.axis = 'Y'
+    lon.units = 'degrees east'
+    lon.axis = 'X'
+    band.units = 'change in hours'
+    band.missing_val = -32767
+    band.valid_min = -6484
+
+    # Populate the variables with data
+    cols, rows = numpy.meshgrid(numpy.arange(ds_jp2.width), numpy.arange(ds_jp2.height))
+    xs, ys = rasterio.transform.xy(ds_jp2.transform, rows, cols)
+
+    #time[] = []
+    lat[:] = numpy.array(xs)[0]
+    lon[:] = numpy.array(ys)[0]
+    band[0, :, :] = jp2_band1
+
+
+    print(ds_nc.title)
+    print(ds_nc.variables.keys())
+    for dimension in ds_nc.dimensions.values():
+         print(dimension)
 
     # Properly close the datasets to flush to disk
     ds_nc.close()
-
+    ds_jp2.close()
 
 # nc_paths = [nc_path1, nc_path2, ...]
 def concat_netcdf(nc_paths: list, concat_file_name: str, path_to_create: str = 'download/nc/'):
@@ -162,6 +231,7 @@ menu_options = {
     2: 'Create a shp from indices',
     3: 'Create a shp for a tile (or region)',
     4: 'Create a csv metadata file with link to data',
+    5: 'Create netcdf from jp2',
     0: 'Exit',
 }
 
@@ -199,6 +269,10 @@ def csv_tuile_indice():
         print('metadata file created.')
     except:
         print('error while creating metadata file')
+
+#def jp2_to_ncdf():
+    #create netcdf
+    #concat
 
 if __name__ == '__main__':
     sftp = Sftp(
@@ -256,6 +330,7 @@ pour la valorisation et l'accès aux données issue
 
     while (True):
 
+        print('\n===============\n')
         print_menu()
         option = ''
         try:
@@ -271,8 +346,10 @@ pour la valorisation et l'accès aux données issue
             shp_tuile()
         elif option == 4:
             csv_tuile_indice()
+        elif option == 5:
+            jpeg_to_netcdf()
         elif option == 0:
             print('Exiting')
             exit()
         else:
-            print('Invalid option. Please enter a number between 0 and 4.')
+            print('Invalid option. Please enter a number between 0 and ', len(menu_options)-1, '.')
