@@ -6,12 +6,10 @@ import xarray
 from datetime import date
 import subprocess
 import numpy
+import datetime
 
 import rasterio
-
 import cv2
-#include <opencv2/imgcodecs.hpp>
-
 from osgeo import gdal
 
 from sftp import Sftp
@@ -57,7 +55,7 @@ def download_sentinel1_indices(sftp: Sftp, indices_tiles: dict, path_to_dl: str 
 
 def jpeg_to_netcdf(path_to_create: str = 'download/nc/', nc_filename: str = 'gdal_nc'):
 
-    img_path1 = 'download/src/NDVI/40KCB/S2A_MSIL2A_20200107T063501_N0208_R134_T40KCB_20200107T075034/S2A_MSIL2A_20200107T063501_N0208_R134_T40KCB_20200107T075034_NDVI.jp2'
+    img_path1 = '/home/csouton/Documents/sen2val/download/src/NDVI/40KCB/S2A_MSIL2A_20200107T063501_N0208_R134_T40KCB_20200107T075034/S2A_MSIL2A_20200107T063501_N0208_R134_T40KCB_20200107T075034_NDVI.jp2'
     img_path2 = 'download/src/NDVI/40KCB/S2A_MSIL2A_20200127T063501_N0208_R134_T40KCB_20200127T075758/S2A_MSIL2A_20200127T063501_N0208_R134_T40KCB_20200127T075758_NDVI.jp2'
     img_path3 = 'download/src/NDVI/40KCB/ S2A_MSIL2A_20200206T063501_N0209_R134_T40KCB_20200206T075850/S2A_MSIL2A_20200206T063501_N0209_R134_T40KCB_20200206T075850_NDVI.jp2'
 
@@ -73,21 +71,24 @@ def jpeg_to_netcdf(path_to_create: str = 'download/nc/', nc_filename: str = 'gda
 
     print('\n---NC EMPTY---\n', ds_nc)
 
+    # create nc file with gdal
+    subprocess.call(['gdal_translate', '-of', 'netCDF', '-co', 'FORMAT=NC4', img_path1, path_to_create + 'gdal_subcall.nc'])
 
-    # create nc files from tif with gdal
-    #subprocess.call('gdalinfo '+img_path1)
-    #subprocess.call('gdal_translate -of netCDF -co FORMAT=NC4 '+img_path1+' ' + path_to_create + 'gdal_python.nc')
+    # --TODO
+    # ouvrir le nc gdal, ouvrir un ficier jp2, concatener les valeurs
+
+    # create nc file with gdal_merge
 
     #ds_jp2 = gdal.Open(img_path1)
     #ds_jp2 = gdal.Translate(path_to_create + 'gdal_python.nc', img_path1, format='NetCDF')
     #ds_jp2.title = 'GDAL Translate python product'
 
-    ds_jp2 = rasterio.open(img_path1)
+    ds_jp2 = rasterio.open(img_path1, driver='JP2OpenJPEG')
 
-    print('\n--- JP2 ---\n', ds_jp2)
+    print('\n--- JP2 ---\n', ds_jp2.profile)
     #print(ds_jp2.width)
     #print(ds_jp2.height)
-    #print(ds_jp2.indexes)
+    print(ds_jp2.indexes)
     print(ds_jp2.bounds)
 
     jp2_band1 = ds_jp2.read(1) # bands are indexed from 1
@@ -97,7 +98,7 @@ def jpeg_to_netcdf(path_to_create: str = 'download/nc/', nc_filename: str = 'gda
     width = jp2_band1.shape[1]
 
     # Dimensions
-    ds_nc.createDimension('time', 3)
+    ds_nc.createDimension('time', 1)
     ds_nc.createDimension('lat', ds_jp2.width)
     ds_nc.createDimension('lon', ds_jp2.height)
 
@@ -111,33 +112,41 @@ def jpeg_to_netcdf(path_to_create: str = 'download/nc/', nc_filename: str = 'gda
     ds_nc['crs'].grid_mapping_name = "latitude_longitude"
     crs = ds_jp2.crs
     ds_nc['crs'].epsg_code = str(crs)
-    
 
     # Attributes
-    time.units = 'decades since 1950'
+    time.units = 'days since 1987-01-01 00:00:00'
     time.axis = 'T'
     lat.units = 'degrees north'
     lat.axis = 'Y'
     lon.units = 'degrees east'
     lon.axis = 'X'
-    band.units = 'change in hours'
+    band.units = 'grey'
     band.missing_val = -32767
     band.valid_min = -6484
 
     # Populate the variables with data
     cols, rows = numpy.meshgrid(numpy.arange(ds_jp2.width), numpy.arange(ds_jp2.height))
     xs, ys = rasterio.transform.xy(ds_jp2.transform, rows, cols)
+    #2020 01 07
+    #2020 01 27
+    #2020 02 06
 
-    #time[] = []
+    checkdate = datetime.datetime.strptime("1987-01-01", "%Y-%m-%d")
+    days = (datetime.datetime(2020, 1, 7) - checkdate).days
+
+    time[:] = days
     lat[:] = numpy.array(xs)[0]
     lon[:] = numpy.array(ys)[0]
     band[0, :, :] = jp2_band1
 
-
+    print('\n--- NC FULL ---\n', ds_jp2)
     print(ds_nc.title)
-    print(ds_nc.variables.keys())
-    for dimension in ds_nc.dimensions.values():
-         print(dimension)
+    print(ds_nc.dimensions.keys())
+    for variable in ds_nc.variables.values():
+         print(variable)
+
+    print('\n--- NC GDAL FULL ---\n')
+    subprocess.call(['gdalinfo', img_path1])
 
     # Properly close the datasets to flush to disk
     ds_nc.close()
