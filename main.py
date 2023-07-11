@@ -53,103 +53,136 @@ def download_sentinel1_indices(sftp: Sftp, indices_tiles: dict, path_to_dl: str 
 
     sftp.disconnect()
 
-def jpeg_to_netcdf(path_to_create: str = 'download/nc/', nc_filename: str = 'gdal_nc'):
-
-    img_path1 = '/home/csouton/Documents/sen2val/download/src/NDVI/40KCB/S2A_MSIL2A_20200107T063501_N0208_R134_T40KCB_20200107T075034/S2A_MSIL2A_20200107T063501_N0208_R134_T40KCB_20200107T075034_NDVI.jp2'
-    img_path2 = 'download/src/NDVI/40KCB/S2A_MSIL2A_20200127T063501_N0208_R134_T40KCB_20200127T075758/S2A_MSIL2A_20200127T063501_N0208_R134_T40KCB_20200127T075758_NDVI.jp2'
-    img_path3 = 'download/src/NDVI/40KCB/ S2A_MSIL2A_20200206T063501_N0209_R134_T40KCB_20200206T075850/S2A_MSIL2A_20200206T063501_N0209_R134_T40KCB_20200206T075850_NDVI.jp2'
-
-    img1 = cv2.imread(img_path1, -1) #IMREAD_UNCHANGED
-    print(img1)
+def create_netcdf(path_to_create: str = 'download/nc/', nc_filename: str = 'netcdf4'):
 
     os.makedirs(path_to_create, exist_ok=True)
 
     '''creating empty netcdf'''
-    ds_nc = netCDF4.Dataset(path_to_create + 'netcdf4.nc',
-                             mode='w')  # 'w' will clobber any existing data (unless clobber=False is used, in which case an exception is raised if the file already exists).
-    ds_nc.title = 'netCDF4 product'
-
-    print('\n---NC EMPTY---\n', ds_nc)
-
-    # create nc file with gdal
-    subprocess.call(['gdal_translate', '-of', 'netCDF', '-co', 'FORMAT=NC4', img_path1, path_to_create + 'gdal_subcall.nc'])
-
-    # --TODO
-    # ouvrir le nc gdal, ouvrir un ficier jp2, concatener les valeurs
-
-    # create nc file with gdal_merge
-
-    #ds_jp2 = gdal.Open(img_path1)
-    #ds_jp2 = gdal.Translate(path_to_create + 'gdal_python.nc', img_path1, format='NetCDF')
-    #ds_jp2.title = 'GDAL Translate python product'
-
-    ds_jp2 = rasterio.open(img_path1, driver='JP2OpenJPEG')
-
-    print('\n--- JP2 ---\n', ds_jp2.profile)
-    #print(ds_jp2.width)
-    #print(ds_jp2.height)
-    print(ds_jp2.indexes)
-    print(ds_jp2.bounds)
-
-    jp2_band1 = ds_jp2.read(1) # bands are indexed from 1
-    #print(band1)
-
-    height = jp2_band1.shape[0]
-    width = jp2_band1.shape[1]
+    ds_nc = netCDF4.Dataset(path_to_create + nc_filename + '.nc',
+                            mode='w')  # 'w' will clobber any existing data (unless clobber=False is used, in which case an exception is raised if the file already exists).
+    ds_nc.title = 'netCDF4 python package product'
 
     # Dimensions
     ds_nc.createDimension('time', 1)
-    ds_nc.createDimension('lat', ds_jp2.width)
-    ds_nc.createDimension('lon', ds_jp2.height)
+    ds_nc.createDimension('lat', )
+    ds_nc.createDimension('lon', )
 
     # Variables
-    time = ds_nc.createVariable('time', 'i', ('time',), zlib=True)
+    time = ds_nc.createVariable('time', 'i4', ('time',), zlib=True)
     lat = ds_nc.createVariable('lat', 'f4', ('lat',), zlib=True)
     lon = ds_nc.createVariable('lon', 'f4', ('lon',), zlib=True)
     band = ds_nc.createVariable('band1', 'f4', ('time', 'lat', 'lon',), zlib=True)
 
     ds_nc.createVariable('crs', 'i2', [])
     ds_nc['crs'].grid_mapping_name = "latitude_longitude"
-    crs = ds_jp2.crs
-    ds_nc['crs'].epsg_code = str(crs)
+    #crs = ds_jp2.crs
+    #ds_nc['crs'].epsg_code = str(crs) #! doit être un entier !
 
     # Attributes
-    time.units = 'days since 1987-01-01 00:00:00'
+    time.units = 'days'
     time.axis = 'T'
-    lat.units = 'degrees north'
+    lat.long_name = 'days since 1987-01-01 00:00:00'
+    time.standard_name = 'days_since_1987-01-01'
+
+    lat.long_name = 'y coordinate of projection'
+    lat.standard_name = 'projection_y_coordinate'
+    lat.units = 'm'
     lat.axis = 'Y'
-    lon.units = 'degrees east'
+
+    lon.long_name = 'x coordinate of projection'
+    lon.standard_name = 'projection_x_coordinate'
+    lon.units = 'm'
     lon.axis = 'X'
+
     band.units = 'grey'
     band.missing_val = -32767
     band.valid_min = -6484
 
-    # Populate the variables with data
-    cols, rows = numpy.meshgrid(numpy.arange(ds_jp2.width), numpy.arange(ds_jp2.height))
-    xs, ys = rasterio.transform.xy(ds_jp2.transform, rows, cols)
+    setattr(ds_nc, 'Conventions', 'CF-1.5')
+
+    print('\n---NC EMPTY---\n', ds_nc)
+    print(ds_nc.dimensions.keys())
+
+    for variable in ds_nc.variables.values():
+         print(variable)
+
+    # Properly close the datasets to flush to disk
+    ds_nc.close()
+
+
+def jpeg_to_netcdf(jp2_path: str, path_to_create: str = 'download/nc/', first: bool = True):
+
+    os.makedirs(path_to_create, exist_ok=True)
+
+    img_path1 = '/home/csouton/Documents/sen2val/download/src/NDVI/40KCB/S2A_MSIL2A_20200107T063501_N0208_R134_T40KCB_20200107T075034/S2A_MSIL2A_20200107T063501_N0208_R134_T40KCB_20200107T075034_NDVI.jp2'
+    img_path2 = 'download/src/NDVI/40KCB/S2A_MSIL2A_20200127T063501_N0208_R134_T40KCB_20200127T075758/S2A_MSIL2A_20200127T063501_N0208_R134_T40KCB_20200127T075758_NDVI.jp2'
+    img_path3 = 'download/src/NDVI/40KCB/ S2A_MSIL2A_20200206T063501_N0209_R134_T40KCB_20200206T075850/S2A_MSIL2A_20200206T063501_N0209_R134_T40KCB_20200206T075850_NDVI.jp2'
+
     #2020 01 07
     #2020 01 27
     #2020 02 06
 
+    # gdal.GetJPEG2000Structure()
+    # gdal.FindFile()
+
+    if(first and not os.path.isfile(path_to_create + 'gdal_python_concat.nc')):
+        #ds_jp2 = gdal.Open(img_path1)
+        ds_jp2 = gdal.Translate(path_to_create + 'gdal_python_concat.nc', img_path1, format='NetCDF')
+        ds_jp2.title = 'GDAL Translate python product'
+        print(path_to_create + 'gdal_python_concat.nc', ' created: ', first, not os.path.isfile(path_to_create + 'gdal_python_concat.nc'))
+    else:
+        ds_jp2 = netCDF4.Dataset(path_to_create + 'gdal_python_concat.nc', mode='r') # gdal.Open("NETCDF:{0}:{1}".format(path_to_create + 'gdal_python_concat.nc', 'Band1'))
+        print('File already exist:', first, not os.path.isfile(path_to_create + 'gdal_python_concat.nc'))
+
+    img1 = cv2.imread(img_path2, -1) #IMREAD_UNCHANGED
+    # ds_jp2 = rasterio.open(img_path2, driver='JP2OpenJPEG')
+
+    # s = gdal.GetJPEG2000StructureAsString(img_path2, ["ALL=YES"])
+
+    print('\n--- JP2 ---\n', img1)
+    # print(s)
+
+    print('\n--- NC CONCAT ---\n')
+    subprocess.call(['gdalinfo', path_to_create + 'gdal_python_concat.nc'])
+
+    #rasterio
+
+    #ds_jp2.profile
+    #print(ds_jp2.width)
+    #print(ds_jp2.height)
+    #print(ds_jp2.indexes)
+    #print(ds_jp2.bounds)
+
+    #jp2_band1 = ds_jp2.read(1)  # bands are indexed from 1
+    #height = jp2_band1.shape[0]
+    #width = jp2_band1.shape[1]
+
+    #height = ds_jp2.getattr(ds_jp2, 'height')
+    #width = ds_jp2.getattr(ds_jp2, 'width')
+
+    # Populate the variables with data
+    #cols, rows = numpy.meshgrid(numpy.arange(height), numpy.arange(width))
+    #xs, ys = rasterio.transform.xy(ds_jp2.transform, rows, cols)
+
     checkdate = datetime.datetime.strptime("1987-01-01", "%Y-%m-%d")
     days = (datetime.datetime(2020, 1, 7) - checkdate).days
 
-    time[:] = days
-    lat[:] = numpy.array(xs)[0]
-    lon[:] = numpy.array(ys)[0]
-    band[0, :, :] = jp2_band1
+    # open first nc
+    #time[:] = days
+    #lat[:] = numpy.array(ys)[0]
+    #lon[:] = numpy.array(xs)[0]
+    #band[0, :, :] = jp2_band1
 
-    print('\n--- NC FULL ---\n', ds_jp2)
-    print(ds_nc.title)
-    print(ds_nc.dimensions.keys())
-    for variable in ds_nc.variables.values():
-         print(variable)
 
-    print('\n--- NC GDAL FULL ---\n')
-    subprocess.call(['gdalinfo', img_path1])
+    #print('\n--- NC FULL ---\n', ds_nc)
+    #print(ds_nc.dimensions.keys())
+    #for variable in ds_nc.variables.values():
+    #     print(variable)
+
+    #print('\n--- NC GDAL FULL ---\n')
+    #subprocess.call(['gdalinfo', img_path1])
 
     # Properly close the datasets to flush to disk
-    ds_nc.close()
     ds_jp2.close()
 
 # nc_paths = [nc_path1, nc_path2, ...]
@@ -306,8 +339,7 @@ if __name__ == '__main__':
     # ds_tif1.close()
     # ds_tif2.close() # = None
 
-    # gdal.GetJPEG2000Structure()
-    # gdal.FindFile()
+
 
     logo_g2oi = """
         /$$$$$$   /$$$$$$   /$$$$$$  /$$$$$$
@@ -330,7 +362,7 @@ if __name__ == '__main__':
     |___/\___|_| |_|_____| \_/ \__,_|_|
     ___________________________________
 Script mettant en place une chaîne de traitement 
-pour la valorisation et l'accès aux données issue
+pour la valorisation et l'accès aux données issues
             de sen2chain
         corentin.souton@ird.fr
     """
@@ -356,7 +388,7 @@ pour la valorisation et l'accès aux données issue
         elif option == 4:
             csv_tuile_indice()
         elif option == 5:
-            jpeg_to_netcdf()
+            jpeg_to_netcdf('')
         elif option == 0:
             print('Exiting')
             exit()
