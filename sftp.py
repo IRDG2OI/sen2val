@@ -77,7 +77,8 @@ class Sftp:
 #    Là, parcourue une fois par listdir_attr + test sur chaque item par la regex. Faire le filtre dès list_dir
     def download_folder(self, remote_path: str, dest_path: str, limit_download_size: int, ext: str = '', limit_nb_subrep: int = 1300, force: bool = False):
 
-        # --TODO-- vérifier la longueur de 'ext' et renvoyer une erreur. si vide, prendre tous les fichiers
+        # --TODO--
+        #    vérifier la longueur de 'ext' et renvoyer une erreur. si vide, prendre tous les fichiers
 
         # print('Browsing ', remote_path)
 
@@ -108,7 +109,8 @@ class Sftp:
                         '''if there is a file'''
                         if ext:
                             '''select only files with the given extension'''
-                            # --TODO-- improve file extension selection (regex with '.' character)
+                            # --TODO--
+                            #    improve file extension selection (regex with '.' character)
                             if item_list[i].filename[-4:] == ext:
                                 '''if the file does not exist   or  (if there is already an existing file in download folder    and     wrinting is forced)'''
                                 if not os.path.exists(dest_path + item_list[i].filename) or (os.path.exists(dest_path + item_list[i].filename) and force):

@@ -1,0 +1,9 @@
+__pycache__/
+doc/
+download/
+extract_tiles_indices.py
+reunion/
+sen2val_access_token.txt
+sentinel_login.txt
+table_attributaire_tiles_indices_g2oi.shp.xlsx
+
