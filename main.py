@@ -50,7 +50,7 @@ def download_sentinel1_indices(sftp: Sftp, indices_tiles: dict, path_to_dl: str 
                 os.makedirs(path_to_dl + indice + '/' + indices_tiles[indice][i] + '/', exist_ok=True)
                 limit_download_size = sftp.download_folder(remote_path, path_to_dl + indice + '/' + indices_tiles[indice][i] + '/', limit_download_size, ext)
             except FileNotFoundError as err:
-                print('An error occurred while browsing', remote_path)
+                print('An error occurred while browsing', remote_path, err)
                 pass
             i += 1
 
@@ -71,8 +71,6 @@ def create_netcdf(indice_name: str, tile_name : str, start_year: int, path_to_cr
     ds_nc.title = 'netCDF4 python package product'
 
     '''Dimensions'''
-    #TODO
-    # get width leghth from img
     ds_nc.createDimension('y', size=y_size,)
     ds_nc.createDimension('x', size=x_size,)
     if times_size > 0:
@@ -84,15 +82,10 @@ def create_netcdf(indice_name: str, tile_name : str, start_year: int, path_to_cr
     if times_size > 0:
         time = ds_nc.createVariable('time', 'i4', ('time',), zlib=True, fill_value=0)
     crs = ds_nc.createVariable('transverse_mercator', 'c')
-    #lon = ds_nc.createVariable('lon', 'f4', ('y','x',), zlib=True)
-    #lat = ds_nc.createVariable('lat', 'f4', ('y', 'x', ), zlib=True)
+    #lon = ds_nc.createVariable('lon', 'f4', ('y', 'x',), zlib=True)
+    #lat = ds_nc.createVariable('lat', 'f4', ('y', 'x',), zlib=True)
 
-    indice = ds_nc.createVariable(indice_name, 'f4', ('time', 'y', 'x',), zlib=True, complevel=4, fill_value=-32767)
-
-    #ds_nc.createVariable('crs', 'i2', [])
-    #ds_nc[crs].grid_mapping_name = "latitude_longitude"
-    #crs = ds_jp2.crs
-    #ds_nc['crs'].epsg_code = str(crs) #! doit être un entier !
+    indice = ds_nc.createVariable(indice_name, 'f4', ('time', 'y', 'x',), zlib=True, complevel=4, fill_value=-30000)
 
     '''Attributes'''
     if times_size > 0:
@@ -131,10 +124,8 @@ def create_netcdf(indice_name: str, tile_name : str, start_year: int, path_to_cr
     #lat.units = 'degrees_north'
 
     #TODO
-    # passer un tableau ou lire un tableur externe pour récupérer les information de l'indice qui seront les attribut de la variable indice
+    # passer un tableau ou lire un tableur externe pour récupérer les information de l'indice qui seront les attributs de la variable "indice"
     indice.long_name = 'GDAL Band'
-    #indice.missing_val = -35000
-    #indice.valid_min = -7000
     indice.grid_mapping = "transverse_mercator"
     #band.compress = 'time x y'
     #band.coordinates = 'lon lat'
@@ -144,7 +135,7 @@ def create_netcdf(indice_name: str, tile_name : str, start_year: int, path_to_cr
     # + geoflow
 
     setattr(ds_nc, 'Conventions', 'CF-1.10')
-    setattr(ds_nc, 'start_year', start_year)
+    setattr(ds_nc, 'start_year', start_year)  # year in the date of the first file met
 
     print('\n---NC CREATED---\n', ds_nc)
     print(ds_nc.dimensions.keys())
@@ -160,14 +151,11 @@ def concat_jpeg_to_netcdf(indice_name: str, tile_name: str, time_index: int, pat
     ds_nc = None
     nc_path = output_path + nc_file_name
 
-    # gdal.GetJPEG2000Structure()
-    # gdal.FindFile()
-
     img = rasterio.open(path_jp2, driver='JP2OpenJPEG')
     jp2_band1 = img.read(1)  # bands are indexed from 1
 
     '''Get the date from img file name'''
-    d_str = re.search("(\d{8})", path_jp2).group() # search the regular expression date pattern and return the first occurrence
+    d_str = re.search("(\d{8})", path_jp2).group()  # search the regular expression date pattern and return the first occurrence
     jp2_date_d = int(d_str[6:])
     jp2_date_m = int(d_str[4:-2])
     jp2_date_y = int(d_str[:4])
@@ -181,7 +169,7 @@ def concat_jpeg_to_netcdf(indice_name: str, tile_name: str, time_index: int, pat
         create_netcdf(indice_name, tile_name, jp2_date_y, output_path, nc_file_name, height, width, time_size)
 
         ds_nc = netCDF4.Dataset(nc_path,
-                                mode='a') #a and r+ mean append (in analogy with serial files); an existing file is opened for reading and writing. Appending s to modes r, w, r+ or a will enable unbuffered shared access
+                                mode='a')  #a and r+ mean append (in analogy with serial files); an existing file is opened for reading and writing. Appending s to modes r, w, r+ or a will enable unbuffered shared access
 
         '''Variables'''
         x = ds_nc.variables['x']
@@ -195,15 +183,11 @@ def concat_jpeg_to_netcdf(indice_name: str, tile_name: str, time_index: int, pat
         y[:] = numpy.array(ys)
 
         ds_nc.close()
-        # GDAL affine transform parameters, According to gdal documentation xoff/yoff are image left corner, a/e are pixel wight/height and b/d is rotation and is zero if image is north up.
-        # xoff, a, b, yoff, d, e = ds_tif.GetGeoTransform()
-        #gdal.Translate(path_nc, path_jp2, format='NetCDF').title = 'GDAL Translate python product'
 
     else:
         print('NC found. Writing ', nc_path)
 
     ds_nc = netCDF4.Dataset(nc_path, mode='a') #a and r+ mean append (in analogy with serial files); an existing file is opened for reading and writing. Appending s to modes r, w, r+ or a will enable unbuffered shared access
-
     #img1 = cv2.imread(img_path1)  # IMREAD_UNCHANGED
 
     '''Variables'''
@@ -215,14 +199,7 @@ def concat_jpeg_to_netcdf(indice_name: str, tile_name: str, time_index: int, pat
     time_value = (datetime.datetime(jp2_date_y, jp2_date_m, jp2_date_d) - checkdate).days
     time[time_index] = time_value
 
-    #2020 01 27
-    #2020 02 06
-    #2020 02 16
-
     indice[time_index, :, :] = jp2_band1
-
-    #print('TOTAL INDICE VALUES\n', indice[:,:])
-    #print('INDICE', time_index, 'VALUES\n', indice[time_index, :, :])
 
     # print('\n--- NC COMPLETED ---\n')
     # print(ds_nc.dimensions.keys())
@@ -235,15 +212,14 @@ def concat_jpeg_to_netcdf(indice_name: str, tile_name: str, time_index: int, pat
     '''Properly close the datasets to flush to disk'''
     ds_nc.close()
 
-# nc_paths = [nc_path1, nc_path2, ...]
-#jp2_paths: list, concat_file_name: str, path_to_create: str = 'download/nc/'
+
 # indices_tuiles = {'NVDI' : ['38KQE', '40KCB', ...], 'NDWIGAO' : ['38KQE', '40KCB', ...], ...}
 def sen2chain_to_netcdf(src_path:str, indices_tiles: dict, output_dir_path: str, ext: str = '.jp2'):
     #TODO
     # rajouter un '/' a la fin de src_path et de output_dir_path si le caractère n'est pas présent
 
     #TODO
-    # donner un indice ou un tuile en param et boucler sur les jp2 trouvé
+    # donner un indice ou un tuile en param et boucler sur les jp2 trouvés
     # 'please enter a indice code : '
     # 'please enter a tile code : '
 
@@ -255,15 +231,11 @@ def sen2chain_to_netcdf(src_path:str, indices_tiles: dict, output_dir_path: str,
             imgs_paths = find('*'+indice+ext, src_path + indice + '/' + tile + '/')
             print(imgs_paths)
             nb_total_img = len(imgs_paths)  # count the number of the first file.ext in indice directorties. Needed for the limit of time dimension in the nc
-            img_incr = 0 # count nb jp2 pour cette tuile et pour cet indice, necessaire comme indice pour la variable temporelle du nc
+            img_incr = 0  # count nb jp2 pour cette tuile et pour cet indice, necessaire comme indice pour la variable temporelle du nc
 
             if nb_total_img > 0:
                 while img_incr < nb_total_img:
-                    #try:
                     concat_jpeg_to_netcdf(indice, tile, img_incr, imgs_paths[img_incr], output_dir_path, nc_file_name, nb_total_img)
-                    #except:
-                    #    print('An error occurred while browsing', imgs_paths[img_incr])
-                    #    pass
                     img_incr += 1
             else:
                 print('No ' + ext + ' found in directories ' + src_path + indice + '/' + tile + '/')
@@ -392,10 +364,6 @@ def csv_tuile_indice():
     except:
         print('error while creating metadata file')
 
-#def jp2_to_ncdf():
-    #create netcdf
-    #concat
-
 if __name__ == '__main__':
 
     file = open('sentinel_login.txt','r')
@@ -450,7 +418,6 @@ pour la valorisation et l'accès aux données issues
             option = int(input('Choose an operation: '))
         except:
             print('Wrong input. Please enter a number ... ')
-        # Check what choice was entered and act accordingly
         if option == 1:
             shp_total()
         elif option == 2:
