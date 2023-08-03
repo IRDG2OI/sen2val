@@ -80,14 +80,14 @@ def get_processed_indices_vect(out_folder: str = None, file_name: str = None, li
                             tile = Tile(tile_name)
 
                             if indice_name == 'ndvi':
-                                 feat.SetField('F_record', tile.ndvi.cm001.first.date.strftime('%d/%m/%Y'))
-                                 feat.SetField('L_record', tile.ndvi.cm001.last.date.strftime('%d/%m/%Y'))
+                                 feat.SetField('F_record', tile.ndvi.masks.CM001.first.date.strftime('%d/%m/%Y'))
+                                 feat.SetField('L_record', tile.ndvi.masks.CM001.last.date.strftime('%d/%m/%Y'))
                             elif indice_name == 'ndwigao':
-                                 feat.SetField('F_record', tile.ndwigao.cm001.first.date.strftime('%d/%m/%Y'))
-                                 feat.SetField('L_record', tile.ndwigao.cm001.last.date.strftime('%d/%m/%Y'))
+                                 feat.SetField('F_record', tile.ndwigao.masks.CM001.first.date.strftime('%d/%m/%Y'))
+                                 feat.SetField('L_record', tile.ndwigao.masks.CM001.last.date.strftime('%d/%m/%Y'))
                             elif indice_name == 'mndwi':
-                                 feat.SetField('F_record', tile.mndwi.cm001.first.date.strftime('%d/%m/%Y'))
-                                 feat.SetField('L_record', tile.mndwi.cm001.last.date.strftime('%d/%m/%Y'))
+                                 feat.SetField('F_record', tile.mndwi.masks.CM001.first.date.strftime('%d/%m/%Y'))
+                                 feat.SetField('L_record', tile.mndwi.masks.CM001.last.date.strftime('%d/%m/%Y'))
                             else:
                                 feat.SetField('F_record', 0)
                                 feat.SetField('L_record', 0)
@@ -168,7 +168,7 @@ def get_processed_tiles_total_vect(out_folder: str = None, file_name:str = None)
         tile = Tile(key)
         for p in ['ndvi', 'ndwigao', 'mndwi']:
             try:
-                tile_count[key][p] = len(getattr(tile, p).masks.cm001)
+                tile_count[key][p] = len(getattr(tile, p).masks.CM001)
             except:
                 pass
 
@@ -230,11 +230,11 @@ def get_processed_tiles_total_vect(out_folder: str = None, file_name:str = None)
                 try:
                     feat.SetField(
                         'NDVI_F',
-                        tile.ndvi.cm001.first.date.strftime('%d/%m/%Y'),
+                        tile.ndvi.masks.CM001.first.date.strftime('%d/%m/%Y'),
                     )
                     feat.SetField(
                         'NDVI_L',
-                        tile.ndvi.cm001.last.date.strftime('%d/%m/%Y'),
+                        tile.ndvi.masks.CM001.last.date.strftime('%d/%m/%Y'),
                     )
                 except:
                     feat.SetField('NDVI_F', 0)
@@ -247,11 +247,11 @@ def get_processed_tiles_total_vect(out_folder: str = None, file_name:str = None)
                 try:
                     feat.SetField(
                         'NDWIGAO_F',
-                        tile.ndwigao.cm001.first.date.strftime('%d/%m/%Y'),
+                        tile.ndwigao.masks.CM001.first.date.strftime('%d/%m/%Y'),
                     )
                     feat.SetField(
                         'NDWIGAO_L',
-                        tile.ndwigao.cm001.last.date.strftime('%d/%m/%Y'),
+                        tile.ndwigao.masks.CM001.last.date.strftime('%d/%m/%Y'),
                     )
                 except:
                     feat.SetField('NDWIGAO_F', 0)
@@ -263,11 +263,11 @@ def get_processed_tiles_total_vect(out_folder: str = None, file_name:str = None)
                 try:
                     feat.SetField(
                         'MNDWI_F',
-                        tile.mndwi.cm001.first.date.strftime('%d/%m/%Y'),
+                        tile.mndwi.masks.CM001.first.date.strftime('%d/%m/%Y'),
                     )
                     feat.SetField(
                         'MNDWI_L',
-                        tile.mndwi.cm001.last.date.strftime('%d/%m/%Y'),
+                        tile.mndwi.masks.CM001.last.date.strftime('%d/%m/%Y'),
                     )
                 except:
                     feat.SetField('MNDWI_F', 0)
@@ -345,9 +345,6 @@ def get_processed_tile_vect(out_folder: str = None, tile_name:str = None):
 
     lib = Library()
 
-    if DEBUG:
-        print('list indice', lib.indices)
-
     list_tiles_name = {
         t
         for c in (
@@ -364,6 +361,9 @@ def get_processed_tile_vect(out_folder: str = None, tile_name:str = None):
     }
     list_indices_name = [f.name.lower() for f in lib._indices_path.glob("*")]
 
+    if DEBUG:
+        print('list indices ', list_indices_name)
+
     tile_count = {}
     # ~ logger.info(key)
     tile_count[tile_name] = {
@@ -374,11 +374,11 @@ def get_processed_tile_vect(out_folder: str = None, tile_name:str = None):
     tile = Tile(tile_name)
 
     if DEBUG:
-        print('tile', tile)
+        print('tile info', tile.info)
 
     for p in ['ndvi', 'ndwigao', 'mndwi']:
         try:
-            tile_count[tile_name][p] = len(getattr(tile, p).masks.cm001)
+            tile_count[tile_name][p] = len(getattr(tile, p).masks.CM001)
         except:
             pass
 
@@ -419,11 +419,11 @@ def get_processed_tile_vect(out_folder: str = None, tile_name:str = None):
                 try:
                     feat.SetField(
                         'NDVI_F',
-                        tile.ndvi.cm001.first.date.strftime('%d/%m/%Y'),
+                        tile.ndvi.masks.CM001.first.date.strftime('%d/%m/%Y'),
                     )
                     feat.SetField(
                         'NDVI_L',
-                        tile.ndvi.cm001.last.date.strftime('%d/%m/%Y'),
+                        tile.ndvi.masks.CM001.last.date.strftime('%d/%m/%Y'),
                     )
                 except:
                     feat.SetField('NDVI_F', 0)
@@ -436,11 +436,11 @@ def get_processed_tile_vect(out_folder: str = None, tile_name:str = None):
                 try:
                     feat.SetField(
                         'NDWIGAO_F',
-                        tile.ndwigao.cm001.first.date.strftime('%d/%m/%Y'),
+                        tile.ndwigao.masks.CM001.first.date.strftime('%d/%m/%Y'),
                     )
                     feat.SetField(
                         'NDWIGAO_L',
-                        tile.ndwigao.cm001.last.date.strftime('%d/%m/%Y'),
+                        tile.ndwigao.masks.CM001.last.date.strftime('%d/%m/%Y'),
                     )
                 except:
                     feat.SetField('NDWIGAO_F', 0)
@@ -453,11 +453,11 @@ def get_processed_tile_vect(out_folder: str = None, tile_name:str = None):
                 try:
                     feat.SetField(
                         'MNDWI_F',
-                        tile.mndwi.cm001.first.date.strftime('%d/%m/%Y'),
+                        tile.mndwi.masks.CM001.first.date.strftime('%d/%m/%Y'),
                     )
                     feat.SetField(
                         'MNDWI_L',
-                        tile.mndwi.cm001.last.date.strftime('%d/%m/%Y'),
+                        tile.mndwi.masks.CM001.last.date.strftime('%d/%m/%Y'),
                     )
                 except:
                     feat.SetField('MNDWI_F', 0)
