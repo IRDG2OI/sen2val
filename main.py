@@ -142,7 +142,7 @@ def create_netcdf(indice_name: str, tile_name : str, start_year: int, path_to_cr
     ds_nc.close()
 
 
-def concat_jpeg_to_netcdf(indice_name: str, tile_name: str, time_index: int, path_jp2: str, output_path: str, nc_file_name:str, time_size: int = 0):
+def concat_jpeg_to_netcdf(indice_name: str, tile_name: str, time_index: int, path_jp2: str, output_path: str, nc_file_name:str, time_size: int = 0, overwrite:bool = False):
 
     ds_nc = None
     nc_path = output_path + nc_file_name
@@ -187,6 +187,7 @@ def concat_jpeg_to_netcdf(indice_name: str, tile_name: str, time_index: int, pat
     else:
         print('NC found. Writing ', nc_path)
 
+    # xarray.open_dataset(engine=h5netcdf)
     ds_nc = netCDF4.Dataset(nc_path, mode='a') #a and r+ mean append (in analogy with serial files); an existing file is opened for reading and writing. Appending s to modes r, w, r+ or a will enable unbuffered shared access
     #img1 = cv2.imread(img_path1)  # IMREAD_UNCHANGED
 
@@ -197,9 +198,12 @@ def concat_jpeg_to_netcdf(indice_name: str, tile_name: str, time_index: int, pat
     '''Populate the band and time variables with data'''
     checkdate = datetime.datetime.strptime("1987-01-01", "%Y-%m-%d")
     time_value = (datetime.datetime(jp2_date_y, jp2_date_m, jp2_date_d) - checkdate).days
-    time[time_index] = time_value
 
-    indice[time_index, :, :] = jp2_band1
+    if (time[time_index] != time_value) or overwrite:
+        time[time_index] = time_value
+        indice[time_index, :, :] = jp2_band1
+    else:
+        print('Time serie ', time_value, ' already exit.', 'Overwrite.' if overwrite else 'Skipping.')
 
     # print('\n--- NC COMPLETED ---\n')
     # print(ds_nc.dimensions.keys())
