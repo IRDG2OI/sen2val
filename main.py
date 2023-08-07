@@ -61,7 +61,7 @@ def download_sentinel1_indices(sftp: Sftp, indices_tiles: dict, path_to_dl: str 
 
     sftp.disconnect()
 
-def create_netcdf(indice_name: str, tile_name : str, start_year: int, path_to_create: str, nc_file_name: str, y_size: int = 0, x_size: int = 0, times_size: int = 0):
+def create_netcdf(indice_name: str, tile_name : str, start_year: int, path_to_create: str, nc_file_name: str, y_size: int = 0, x_size: int = 0, times_size: int = 0, crs_code:str = '', wkt:str = ''):
 
     os.makedirs(path_to_create, exist_ok=True)
 
@@ -105,17 +105,8 @@ def create_netcdf(indice_name: str, tile_name : str, start_year: int, path_to_cr
     x.axis = 'X'
 
     crs.grid_mapping_name ='transverse_mercator'
-    crs.longitude_of_central_meridian = 57.
-    crs.false_easting = 500000.
-    crs.false_northing = 10000000.
-    crs.latitude_of_projection_origin = 0.
-    crs.scale_factor_at_central_meridian = 0.9996
-    crs.long_name = 'CRS definition'
-    crs.GeoTransform ='300000 10 0 7700020 0 -10'
-    crs.longitude_of_prime_meridian = 0.
-    crs.semi_major_axis = 6378137.
-    crs.inverse_flattening = 298.257223563
-    crs.spatial_ref = 'PROJCS["WGS 84 / UTM zone 40S",GEOGCS["WGS 84",DATUM["WGS_1984",SPHEROID["WGS 84",6378137,298.257223563,AUTHORITY["EPSG","7030"]],AUTHORITY["EPSG","6326"]],PRIMEM["Greenwich",0,AUTHORITY["EPSG","8901"]],UNIT["degree",0.0174532925199433,AUTHORITY["EPSG","9122"]],AUTHORITY["EPSG","4326"]],PROJECTION["Transverse_Mercator"],PARAMETER["latitude_of_origin",0],PARAMETER["central_meridian",57],PARAMETER["scale_factor",0.9996],PARAMETER["false_easting",500000],PARAMETER["false_northing",10000000],UNIT["metre",1,AUTHORITY["EPSG","9001"]],AXIS["Easting",EAST],AXIS["Northing",NORTH],AUTHORITY["EPSG","32740"]]'
+    crs.long_name = crs_code
+    crs.spatial_ref = wkt
 
     #lon.long_name = 'longitude'
     #lon.units = 'degrees_east'
@@ -123,19 +114,24 @@ def create_netcdf(indice_name: str, tile_name : str, start_year: int, path_to_cr
     #lat.long_name = 'latitude'
     #lat.units = 'degrees_north'
 
-    #TODO
-    # passer un tableau ou lire un tableur externe pour récupérer les information de l'indice qui seront les attributs de la variable "indice"
-    indice.long_name = 'GDAL Band'
+    indice.long_name = 'Image indices'
     indice.grid_mapping = "transverse_mercator"
     #band.compress = 'time x y'
     #band.coordinates = 'lon lat'
 
-    #TODO
-    # The general description of a file’s contents should be contained in the following attributes: title, history, institution, source, comment and references
-    # + geoflow
-
     setattr(ds_nc, 'Conventions', 'CF-1.10')
     setattr(ds_nc, 'start_year', start_year)  # year in the date of the first file met
+
+    #TODO
+    # get metadata from shared online drive file
+
+    '''geoflow Dunblincore metadata'''
+    geoflow_indice_md_df = pandas.read_csv('metadata/METADATA_SEN2CHAIN_indices.csv', header=0, usecols=lambda col: col not in ['Data'])
+    contain_indice_name = geoflow_indice_md_df['Identifier']=='Sen2Chain_'+indice_name
+    indice_row = geoflow_indice_md_df[contain_indice_name]
+
+    for col_name in indice_row.columns.values:
+        setattr(ds_nc, col_name, indice_row[col_name].values[0]) #indie_row[col_mane] is a series pandas object with 1 value
 
     print('\n---NC CREATED---\n', ds_nc)
     print(ds_nc.dimensions.keys())
@@ -154,6 +150,10 @@ def concat_jpeg_to_netcdf(indice_name: str, tile_name: str, time_index: int, pat
     img = rasterio.open(path_jp2, driver='JP2OpenJPEG')
     jp2_band1 = img.read(1)  # bands are indexed from 1
 
+    '''Get crs from img metadata'''
+    crs = img.crs
+    wkt = crs.wkt
+    wkt_ar = numpy.array(wkt)
     '''Get the date from img file name'''
     d_str = re.search("(\d{8})", path_jp2).group()  # search the regular expression date pattern and return the first occurrence
     jp2_date_d = int(d_str[6:])
@@ -166,7 +166,7 @@ def concat_jpeg_to_netcdf(indice_name: str, tile_name: str, time_index: int, pat
         height = jp2_band1.shape[0]
         width = jp2_band1.shape[1]
 
-        create_netcdf(indice_name, tile_name, jp2_date_y, output_path, nc_file_name, height, width, time_size)
+        create_netcdf(indice_name, tile_name, jp2_date_y, output_path, nc_file_name, height, width, time_size, crs, wkt)
 
         ds_nc = netCDF4.Dataset(nc_path,
                                 mode='a')  #a and r+ mean append (in analogy with serial files); an existing file is opened for reading and writing. Appending s to modes r, w, r+ or a will enable unbuffered shared access
@@ -365,6 +365,7 @@ def csv_tuile_indice():
         print('error while creating metadata file')
 
 if __name__ == '__main__':
+    os.environ['HDF5_USE_FILE_LOCKING'] = 'FALSE'  # disable all file locking operations used in HDF5
 
     file = open('sentinel_login.txt','r')
 
@@ -429,7 +430,7 @@ pour la valorisation et l'accès aux données issues
         elif option == 5:
             src_path = 'download/src/'
             output_dir_path = 'download/nc/'
-            indices_tiles = {'NDVI': ['40KCB']}
+            indices_tiles = {'NDVI': ['38LRK']}
             sen2chain_to_netcdf(src_path, indices_tiles, output_dir_path)
             
         elif option == 0:
