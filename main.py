@@ -22,14 +22,14 @@ from geo_utils_shp_only import get_processed_tile_vect
 def find(pattern, path):
     result = []
     for root, dirs, files in os.walk(path):
-        print('find ', files, ' in ', root)
         for name in files:
             if fnmatch.fnmatch(name, pattern):
                 result.append(os.path.join(root, name))
     return result
 
+
 def create_netcdf(indice_name: str, tile_name: str, start_year: int, path_to_create: str, nc_file_name: str,
-                  y_size: int = 0, x_size: int = 0, times_size: int = 0):
+                  y_size: int = 0, x_size: int = 0, times_size: int = 0, crs_code: str = '', wkt: str = ''):
     os.makedirs(path_to_create, exist_ok=True)
 
     '''creating empty netcdf'''
@@ -72,17 +72,8 @@ def create_netcdf(indice_name: str, tile_name: str, start_year: int, path_to_cre
     x.axis = 'X'
 
     crs.grid_mapping_name = 'transverse_mercator'
-    crs.longitude_of_central_meridian = 57.
-    crs.false_easting = 500000.
-    crs.false_northing = 10000000.
-    crs.latitude_of_projection_origin = 0.
-    crs.scale_factor_at_central_meridian = 0.9996
-    crs.long_name = 'CRS definition'
-    crs.GeoTransform = '300000 10 0 7700020 0 -10'
-    crs.longitude_of_prime_meridian = 0.
-    crs.semi_major_axis = 6378137.
-    crs.inverse_flattening = 298.257223563
-    crs.spatial_ref = 'PROJCS["WGS 84 / UTM zone 40S",GEOGCS["WGS 84",DATUM["WGS_1984",SPHEROID["WGS 84",6378137,298.257223563,AUTHORITY["EPSG","7030"]],AUTHORITY["EPSG","6326"]],PRIMEM["Greenwich",0,AUTHORITY["EPSG","8901"]],UNIT["degree",0.0174532925199433,AUTHORITY["EPSG","9122"]],AUTHORITY["EPSG","4326"]],PROJECTION["Transverse_Mercator"],PARAMETER["latitude_of_origin",0],PARAMETER["central_meridian",57],PARAMETER["scale_factor",0.9996],PARAMETER["false_easting",500000],PARAMETER["false_northing",10000000],UNIT["metre",1,AUTHORITY["EPSG","9001"]],AXIS["Easting",EAST],AXIS["Northing",NORTH],AUTHORITY["EPSG","32740"]]'
+    crs.long_name = crs_code
+    crs.spatial_ref = wkt
 
     # lon.long_name = 'longitude'
     # lon.units = 'degrees_east'
@@ -90,19 +81,26 @@ def create_netcdf(indice_name: str, tile_name: str, start_year: int, path_to_cre
     # lat.long_name = 'latitude'
     # lat.units = 'degrees_north'
 
-    # TODO
-    # passer un tableau ou lire un tableur externe pour récupérer les information de l'indice qui seront les attributs de la variable "indice"
-    indice.long_name = 'GDAL Band'
+    indice.long_name = 'Image indices'
     indice.grid_mapping = "transverse_mercator"
     # band.compress = 'time x y'
     # band.coordinates = 'lon lat'
 
-    # TODO
-    # The general description of a file’s contents should be contained in the following attributes: title, history, institution, source, comment and references
-    # + geoflow
-
     setattr(ds_nc, 'Conventions', 'CF-1.10')
     setattr(ds_nc, 'start_year', start_year)  # year in the date of the first file met
+
+    # TODO
+    # get metadata from shared online drive file
+
+    '''geoflow Dunblincore metadata'''
+    geoflow_indice_md_df = pandas.read_csv('metadata/METADATA_SEN2CHAIN_indices.csv', header=0,
+                                           usecols=lambda col: col not in ['Data'])
+    contain_indice_name = geoflow_indice_md_df['Identifier'] == 'Sen2Chain_' + indice_name
+    indice_row = geoflow_indice_md_df[contain_indice_name]
+
+    for col_name in indice_row.columns.values:
+        setattr(ds_nc, col_name,
+                indice_row[col_name].values[0])  # indie_row[col_mane] is a series pandas object with 1 value
 
     print('\n---NC CREATED---\n', ds_nc)
     print(ds_nc.dimensions.keys())
@@ -114,13 +112,17 @@ def create_netcdf(indice_name: str, tile_name: str, start_year: int, path_to_cre
 
 
 def concat_jpeg_to_netcdf(indice_name: str, tile_name: str, time_index: int, path_jp2: str, output_path: str,
-                          nc_file_name: str, time_size: int = 0):
+                          nc_file_name: str, time_size: int = 0, overwrite: bool = False):
     ds_nc = None
     nc_path = output_path + nc_file_name
 
     img = rasterio.open(path_jp2, driver='JP2OpenJPEG')
     jp2_band1 = img.read(1)  # bands are indexed from 1
 
+    '''Get crs from img metadata'''
+    crs = img.crs
+    wkt = crs.wkt
+    wkt_ar = numpy.array(wkt)
     '''Get the date from img file name'''
     d_str = re.search("(\d{8})",
                       path_jp2).group()  # search the regular expression date pattern and return the first occurrence
@@ -134,7 +136,7 @@ def concat_jpeg_to_netcdf(indice_name: str, tile_name: str, time_index: int, pat
         height = jp2_band1.shape[0]
         width = jp2_band1.shape[1]
 
-        create_netcdf(indice_name, tile_name, jp2_date_y, output_path, nc_file_name, height, width, time_size)
+        create_netcdf(indice_name, tile_name, jp2_date_y, output_path, nc_file_name, height, width, time_size, crs, wkt)
 
         ds_nc = netCDF4.Dataset(nc_path,
                                 mode='a')  # a and r+ mean append (in analogy with serial files); an existing file is opened for reading and writing. Appending s to modes r, w, r+ or a will enable unbuffered shared access
@@ -155,6 +157,7 @@ def concat_jpeg_to_netcdf(indice_name: str, tile_name: str, time_index: int, pat
     else:
         print('NC found. Writing ', nc_path)
 
+    # xarray.open_dataset(engine=h5netcdf)
     ds_nc = netCDF4.Dataset(nc_path,
                             mode='a')  # a and r+ mean append (in analogy with serial files); an existing file is opened for reading and writing. Appending s to modes r, w, r+ or a will enable unbuffered shared access
     # img1 = cv2.imread(img_path1)  # IMREAD_UNCHANGED
@@ -166,9 +169,12 @@ def concat_jpeg_to_netcdf(indice_name: str, tile_name: str, time_index: int, pat
     '''Populate the band and time variables with data'''
     checkdate = datetime.datetime.strptime("1987-01-01", "%Y-%m-%d")
     time_value = (datetime.datetime(jp2_date_y, jp2_date_m, jp2_date_d) - checkdate).days
-    time[time_index] = time_value
 
-    indice[time_index, :, :] = jp2_band1
+    if (time[time_index] != time_value) or overwrite:
+        time[time_index] = time_value
+        indice[time_index, :, :] = jp2_band1
+    else:
+        print('Time serie ', time_value, ' already exit.', 'Overwrite.' if overwrite else 'Skipping.')
 
     # print('\n--- NC COMPLETED ---\n')
     # print(ds_nc.dimensions.keys())
@@ -192,21 +198,19 @@ def sen2chain_to_netcdf(src_path: str, indices_tiles: dict, output_dir_path: str
     # 'please enter a indice code : '
     # 'please enter a tile code : '
 
-    nb_total_img = 0 # count the number of the first file.ext in indice directorties. Needed for the limit of time dimension in the nc
-    img_incr = 0  # count nb jp2 pour cette tuile et pour cet indice, necessaire comme indice pour la variable temporelle du nc
-
     for indice in indices_tiles:
         for tile in indices_tiles[indice]:
+            print("----------\n", 'Processing for ' + indice + '/' + tile)
             nc_file_name = indice + '_' + tile + '.nc'
 
             imgs_paths = find('*' + indice + ext, src_path + indice + '/' + tile + '/')
+            print(imgs_paths)
             nb_total_img = len(
-                imgs_paths)
-            print("----------\n", 'Processing for ' + indice + '/' + tile)
+                imgs_paths)  # count the number of the first file.ext in indice directorties. Needed for the limit of time dimension in the nc
+            img_incr = 0  # count nb jp2 pour cette tuile et pour cet indice, necessaire comme indice pour la variable temporelle du nc
 
             if nb_total_img > 0:
                 while img_incr < nb_total_img:
-                    print('('+img_incr + '/' + nb_total_img + ') ' + imgs_paths[img_incr])
                     concat_jpeg_to_netcdf(indice, tile, img_incr, imgs_paths[img_incr], output_dir_path, nc_file_name,
                                           nb_total_img)
                     img_incr += 1
@@ -350,6 +354,18 @@ def csv_tuile_indice():
 
 
 if __name__ == '__main__':
+    os.environ['HDF5_USE_FILE_LOCKING'] = 'FALSE'  # disable all file locking operations used in HDF5
+
+    file = open('sentinel_login.txt', 'r')
+
+    for line in file:
+        ids = line.split(',')
+
+    sftp = Sftp(
+        hostname=ids[0],
+        username=ids[1],
+        password=ids[2]
+    )
 
     # 38KQE Madagascar - 40KCB Réunion
     # indices_tiles = {'NDVI': ['40KCB'], 'NDWIGAO': ['40KCB'], 'MNDWI': ['40KCB']}
@@ -401,8 +417,7 @@ pour la valorisation et l'accès aux données issues
         elif option == 4:
             csv_tuile_indice()
         elif option == 5:
-
-            src_path = '/DATA/S2/PRODUCTS/INDICES/'
+            src_path = 'download/src/'
             output_dir_path = 'download/nc/'
             indices_tiles = {'NDVI': ['40KCB']}
             sen2chain_to_netcdf(src_path, indices_tiles, output_dir_path)
