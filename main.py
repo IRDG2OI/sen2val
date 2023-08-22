@@ -142,9 +142,8 @@ def create_netcdf(indice_name: str, tile_name : str, start_year: int, path_to_cr
     ds_nc.close()
 
 
-def concat_jpeg_to_netcdf(indice_name: str, tile_name: str, time_index: int, path_jp2: str, output_path: str, nc_file_name:str, time_size: int = 0, overwrite:bool = False):
+def concat_jpeg_to_netcdf(indice_name: str, tile_name: str, time_index: int, path_jp2: str, output_path: str, nc_file_name:str, ds_nc, time_size: int = 0, overwrite:bool = False):
 
-    ds_nc = None
     nc_path = output_path + nc_file_name
 
     img = rasterio.open(path_jp2, driver='JP2OpenJPEG')
@@ -182,28 +181,25 @@ def concat_jpeg_to_netcdf(indice_name: str, tile_name: str, time_index: int, pat
         x[:] = numpy.array(xs)
         y[:] = numpy.array(ys)
 
-        ds_nc.close()
-
     else:
         print('NC found. Writing ', nc_path)
 
-    # xarray.open_dataset(engine=h5netcdf)
-    ds_nc = netCDF4.Dataset(nc_path, mode='a') #a and r+ mean append (in analogy with serial files); an existing file is opened for reading and writing. Appending s to modes r, w, r+ or a will enable unbuffered shared access
-    #img1 = cv2.imread(img_path1)  # IMREAD_UNCHANGED
-
-    '''Variables'''
     time = ds_nc.variables['time']
     indice = ds_nc.variables[indice_name]
+
+    # xarray.open_dataset(engine=h5netcdf)
+    #ds_nc = netCDF4.Dataset(nc_path, mode='a') #a and r+ mean append (in analogy with serial files); an existing file is opened for reading and writing. Appending s to modes r, w, r+ or a will enable unbuffered shared access
+    #img1 = cv2.imread(img_path1)  # IMREAD_UNCHANGED
 
     '''Populate the band and time variables with data'''
     checkdate = datetime.datetime.strptime("1987-01-01", "%Y-%m-%d")
     time_value = (datetime.datetime(jp2_date_y, jp2_date_m, jp2_date_d) - checkdate).days
 
-    if (time[time_index] != time_value) or overwrite:
+    if (time_value not in time[:]) or overwrite:
         time[time_index] = time_value
         indice[time_index, :, :] = jp2_band1
     else:
-        print('Time serie ', time_value, ' already exit.', 'Overwrite.' if overwrite else 'Skipping.')
+        print('Time serie ', time_value, ' already exit. Skipping')
 
     # print('\n--- NC COMPLETED ---\n')
     # print(ds_nc.dimensions.keys())
@@ -213,8 +209,7 @@ def concat_jpeg_to_netcdf(indice_name: str, tile_name: str, time_index: int, pat
     #print('\n--- NC GDAL FULL ---\n')
     #subprocess.call(['gdalinfo', img_path1])
 
-    '''Properly close the datasets to flush to disk'''
-    ds_nc.close()
+    return ds_nc
 
 
 # indices_tuiles = {'NVDI' : ['38KQE', '40KCB', ...], 'NDWIGAO' : ['38KQE', '40KCB', ...], ...}
@@ -227,23 +222,34 @@ def sen2chain_to_netcdf(src_path:str, indices_tiles: dict, output_dir_path: str,
     # 'please enter a indice code : '
     # 'please enter a tile code : '
 
+    ds = None
+
+    #TODO
+    # read first date and last date for this indice and tile from the shapefile db_total.shp
+    years = ["2015", "2016", "2017", "2018", "2019", "2020", "2021", "2022", "2023"]
+
     for indice in indices_tiles:
         for tile in indices_tiles[indice]:
-            print("----------\n", 'Processing for ' + indice + '/' + tile)
-            nc_file_name = indice + '_' + tile + '.nc'
+            for y in years:
+                print("----------\n", 'Processing for ' + indice + '/' + tile)
+                nc_file_name = indice + '_' + tile + '_' + y + '.nc'
 
-            imgs_paths = find('*'+indice+ext, src_path + indice + '/' + tile + '/')
-            print(imgs_paths)
-            nb_total_img = len(imgs_paths)  # count the number of the first file.ext in indice directorties. Needed for the limit of time dimension in the nc
-            img_incr = 0  # count nb jp2 pour cette tuile et pour cet indice, necessaire comme indice pour la variable temporelle du nc
+                imgs_paths = find('*'+tile+'_'+y+'*'+indice+ext, src_path + indice + '/' + tile + '/')
+                print(imgs_paths)
+                nb_total_img = len(imgs_paths)  # count the number of the first file.ext in indice directorties. Needed for the limit of time dimension in the nc
+                img_incr = 0  # count nb jp2 pour cette tuile et pour cet indice, necessaire comme indice pour la variable temporelle du nc
 
-            if nb_total_img > 0:
-                while img_incr < nb_total_img:
-                    concat_jpeg_to_netcdf(indice, tile, img_incr, imgs_paths[img_incr], output_dir_path, nc_file_name, nb_total_img)
-                    img_incr += 1
-            else:
-                print('No ' + ext + ' found in directories ' + src_path + indice + '/' + tile + '/')
-            print('Process completed for ' + indice + '/' + tile, "\n----------\n")
+                if nb_total_img > 0:
+                    while img_incr < nb_total_img:
+                        ds = concat_jpeg_to_netcdf(indice, tile, img_incr, imgs_paths[img_incr], output_dir_path, nc_file_name, ds, nb_total_img)
+                        img_incr += 1
+                else:
+                    print('No ' + ext + ' found in directories ' + src_path + indice + '/' + tile + '/')
+
+                print('Process completed for ' + indice + '/' + tile +" year "+ y , "\n----------\n")
+
+    '''Properly close the datasets to flush to disk'''
+    ds.close()
 
 def concat_nc(nc_paths: list, concat_file_name: str, path_to_create: str = 'download/nc/'):
     '''single xarray Dataset containing data from all files'''
@@ -327,7 +333,7 @@ def create_metadata_csv_file(indices_tiles, md_output_file_name: str, md_static_
 menu_options = {
     1: 'Create a general shp with the coverage of all tiles',
     2: 'Create a shp from indices',
-    3: 'TODO Create a shp for a tile (or region)',
+    3: 'Create a shp for a tile (or region)',
     4: 'Create a csv metadata file with link to data',
     5: 'Create netcdf from jp2',
     0: 'Exit',
@@ -351,17 +357,14 @@ def shp_indices():
         print('shp by indices created.')
     except:
         print('error while creating shp by indices.')
-def shp_tuile():
+def shp_tuile(tile_name):
     try:
-        get_processed_tile_vect('download/shp', '40KCB')
+        get_processed_tile_vect('download/shp', tile_name)
         print('shp by tile created.')
     except:
         print('error while creating shp by tile')
 
-def csv_tuile_indice():
-    # 38KQE Madagascar - 40KCB Réunion
-    indices_tiles = {'NDVI': ['40KCB'], 'NDWIGAO': ['40KCB'], 'MNDWI': ['40KCB']}
-
+def csv_tuile_indice(indices_tiles):
     try:
         create_metadata_csv_file(indices_tiles, 'METADATA_SEN2CHAIN', 'download/METADATA_SEN2CHAIN_tuiles-indices_static.csv')
         print('metadata file created.')
@@ -428,9 +431,12 @@ pour la valorisation et l'accès aux données issues
         elif option == 2:
             shp_indices()
         elif option == 3:
-            shp_tuile()
+            tn = '38LRK'
+            shp_tuile(tn)
         elif option == 4:
-            csv_tuile_indice()
+            # 38LRK Madagascar - 40KCB Réunion
+            ti = {'NDVI': ['38LRK'], 'NDWIGAO': ['38LRK'], 'MNDWI': ['38LRK']}
+            csv_tuile_indice(ti)
         elif option == 5:
             src_path = 'download/src/'
             output_dir_path = 'download/nc/'
