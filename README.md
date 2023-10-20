@@ -22,5 +22,7 @@ This code was produced as part of the G2OI project Co-financed by the European U
         <li>exporter les données au format Netcdf afin de regrouper les images d’une même série temporelle dans un seul fichier qui pourra être déposé sur Thredds ou Zenodo (cf réunion SEAS-OI du 13/12/2023).</li>
     </ul>
 </p>
-    <img src="https://drive.google.com/uc?id=1rOoQUX82i3eR3KBGz3mmMzgvJceo_wjl">
+<div>
+    <img height=120  width=260 src="https://drive.google.com/uc?id=1rOoQUX82i3eR3KBGz3mmMzgvJceo_wjl">
     <img src="https://drive.google.com/uc?id=1_wgT7WVSN6LNt9KmpoJCUrwTsV1Hhx8a">
+</div>
