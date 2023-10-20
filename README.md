@@ -23,6 +23,6 @@ This code was produced as part of the G2OI project Co-financed by the European U
     </ul>
 </p>
 <div>
-    <img height=150  width=320 src="https://drive.google.com/uc?id=1rOoQUX82i3eR3KBGz3mmMzgvJceo_wjl">
+    <img height=180  width=450 src="https://drive.google.com/uc?id=1rOoQUX82i3eR3KBGz3mmMzgvJceo_wjl">
     <img src="https://drive.google.com/uc?id=1_wgT7WVSN6LNt9KmpoJCUrwTsV1Hhx8a">
 </div>
