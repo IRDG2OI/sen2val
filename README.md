@@ -19,7 +19,7 @@ This code was produced as part of the G2OI project Co-financed by the European U
         <li>générer un shapefile filtrant par couple tuile-indice,</li>
         <li>créer des métadonnées conformes aux standards du Dublin Core utilisé par la librairie geoflow,</li>
         <li>automatiser la création de métadonnées au format OGC - ISO 19115 et la publication des métadonnées et des données dans l’IDS en appelant la bibliothèque geoflow</li>
-        <li>exporter les données au format Netcdf afin de regrouper les images d’une même série temporelle dans un seul fichier qui pourra être déposé sur Thredds ou Zenodo (cf réunion SEAS-OI du 13/12/2023).</li>
+        <li>exporter les données au format Netcdf afin de regrouper les images d’une même série temporelle dans un seul fichier qui pourra être déposé sur Thredds ou Zenodo.</li>
     </ul>
 </p>
 <div>
