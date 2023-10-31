@@ -241,7 +241,7 @@ def get_processed_tiles_total_vect(out_folder: str = None, file_name:str = None)
                     feat.SetField('NDVI_L', 0)
 
                 feat.SetField(
-                    'MD_NDWIGAO', 'https://g2oi.ird.fr/geonetwork/srv/eng/catalog.search#/metadata/S2_NDWIGAO'
+                    'MD_NDWIGAO', ''
                 )
                 feat.SetField('NDWIGAO', tile_count[tile_name]['ndwigao'])
                 try:

@@ -1,0 +1,4 @@
+__pycache__/
+download/
+metadata/
+zenodo_access_token.txt
