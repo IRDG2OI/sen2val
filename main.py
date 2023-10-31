@@ -7,16 +7,80 @@ import xarray
 from datetime import date
 import subprocess
 import numpy
-import datetime
+
+import requests
 
 import rasterio
 from osgeo import gdal
+
+import dbf
+
+import zipfile
+from typing import Union
+from pathlib import Path
 
 from sftp import Sftp
 
 from geo_utils_shp_only import get_processed_indices_vect
 from geo_utils_shp_only import get_processed_tiles_total_vect
 from geo_utils_shp_only import get_processed_tile_vect
+from zenodo_helper import *
+
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+
+
+def get_tiles_region(file_path: str):
+
+    f = open(file_path, 'r')
+    data = f.read()
+
+    '''splitting text'''
+    tile_list = data.split("\n")
+
+    '''remove last empty string element'''
+    tile_list.pop()
+
+    f.close()
+    return tile_list
+
+
+EXCLUDED = get_tiles_region('tiles_exclude.txt')
+
+CROZET = get_tiles_region('tiles_crozet.txt')
+EPARSES = get_tiles_region('tiles_eparses.txt')
+KERGUELEN = get_tiles_region('tiles_kerguelen.txt')
+MADAGASCAR = get_tiles_region('tiles_mada.txt')
+MAURICE = get_tiles_region('tiles_maurice.txt')
+REUNION = get_tiles_region('tiles_reunion.txt')
+RODRIGUES = get_tiles_region('tiles_rodrigues.txt')
+SEYCHELLES = get_tiles_region('tiles_seychelles.txt')
+TROMELIN = get_tiles_region('tiles_tromelin.txt')
+
+'''Shapefile operations'''
+def shp_total():
+    try:
+        get_processed_tiles_total_vect('')
+        print('general shp created.')
+    except:
+        print('error while creating general shp file.')
+
+
+def shp_indices():
+    try:
+        get_processed_indices_vect('')
+        print('shp by indices created.')
+    except:
+        print('error while creating shp by indices.')
+
+
+def shp_tuile(tile_name):
+    try:
+        get_processed_tile_vect('download/shp', tile_name)
+        print('shp by tile created.')
+    except:
+        print('error while creating shp by tile')
+
 
 def find(pattern, path):
     result = []
@@ -26,6 +90,7 @@ def find(pattern, path):
             if fnmatch.fnmatch(name, pattern):
                 result.append(os.path.join(root, name))
     return result
+
 
 # indices_tuiles = {'NVDI' : ['38KQE', '40KCB', ...], 'NDWIGAO' : ['38KQE', '40KCB', ...], ...}
 def download_sentinel1_indices(sftp: Sftp, indices_tiles: dict, path_to_dl: str = 'download/ql/',  ext: str = '.jp2', limit_download_size:int = 5000000000):
@@ -60,6 +125,7 @@ def download_sentinel1_indices(sftp: Sftp, indices_tiles: dict, path_to_dl: str 
             print("----------\n", 'Download completed for ' + indice, "\n----------\n")
 
     sftp.disconnect()
+
 
 def create_netcdf(indice_name: str, tile_name : str, start_year: int, path_to_create: str, nc_file_name: str, y_size: int = 0, x_size: int = 0, times_size: int = 0, crs_code:str = '', wkt:str = ''):
 
@@ -192,8 +258,8 @@ def concat_jpeg_to_netcdf(indice_name: str, tile_name: str, time_index: int, pat
     #img1 = cv2.imread(img_path1)  # IMREAD_UNCHANGED
 
     '''Populate the band and time variables with data'''
-    checkdate = datetime.datetime.strptime("1987-01-01", "%Y-%m-%d")
-    time_value = (datetime.datetime(jp2_date_y, jp2_date_m, jp2_date_d) - checkdate).days
+    checkdate = date.datetime.strptime("1987-01-01", "%Y-%m-%d")
+    time_value = (date.datetime(jp2_date_y, jp2_date_m, jp2_date_d) - checkdate).days
 
     if (time_value not in time[:]) or overwrite:
         time[time_index] = time_value
@@ -212,7 +278,6 @@ def concat_jpeg_to_netcdf(indice_name: str, tile_name: str, time_index: int, pat
     return ds_nc
 
 
-# indices_tuiles = {'NVDI' : ['38KQE', '40KCB', ...], 'NDWIGAO' : ['38KQE', '40KCB', ...], ...}
 def sen2chain_to_netcdf(src_path:str, indices_tiles: dict, output_dir_path: str, ext: str = '.jp2'):
     #TODO
     # rajouter un '/' a la fin de src_path et de output_dir_path si le caractère n'est pas présent
@@ -241,6 +306,7 @@ def sen2chain_to_netcdf(src_path:str, indices_tiles: dict, output_dir_path: str,
 
                 if nb_total_img > 0:
                     while img_incr < nb_total_img:
+                        print('(' + img_incr + '/' + nb_total_img + ') ' + imgs_paths[img_incr])
                         ds = concat_jpeg_to_netcdf(indice, tile, img_incr, imgs_paths[img_incr], output_dir_path, nc_file_name, ds, nb_total_img)
                         img_incr += 1
                 else:
@@ -250,6 +316,7 @@ def sen2chain_to_netcdf(src_path:str, indices_tiles: dict, output_dir_path: str,
 
     '''Properly close the datasets to flush to disk'''
     ds.close()
+
 
 def concat_nc(nc_paths: list, concat_file_name: str, path_to_create: str = 'download/nc/'):
     '''single xarray Dataset containing data from all files'''
@@ -270,106 +337,251 @@ def concat_nc(nc_paths: list, concat_file_name: str, path_to_create: str = 'down
     ds_nc_concat.close()
 
 
-def create_metadata_csv_file(indices_tiles, md_output_file_name: str, md_static_content_file_path: str = 'null'):
-    '''geoflow metadata file'''
+def df_to_csv(df, tile: str):
 
-    md = pandas.DataFrame({})
-    md_dynamic_content = pandas.DataFrame({})
-    md_static_content = pandas.read_csv(md_static_content_file_path, encoding='iso8859_2')
+    '''Formating template'''
+    df['Data'] = ''
+    df['SpatialCoverage'] = ''
 
-    for indice_name in indices_tiles:
-        for tile_name in indices_tiles[indice_name]:
+    df = df.replace(to_replace='.TUILE.', value=tile, regex=True)
+    df = df.replace(to_replace='.DATE\]', value=date.today().strftime('%Y-%m-%d'), regex=True)
+    df = df.replace(to_replace='.DATE_D.', value='2015', regex=True)
+    df = df.replace(to_replace='.DATE_F.', value='2023', regex=True)
 
-            md_dynamic_content = pandas.concat([md_dynamic_content, pandas.DataFrame(
-                {
-                    'Identifier': ['data_' + tile_name + '_' + indice_name + '_S2CHAIN'],
-                    'title': 'Localisation des séries d\'indices (' + indice_name + ') générés sur la tuile ' + tile_name + ' par Sen2Chain.',
-                    'Description': 'abstract:Dans le cadre des activités en télédétection de l\'UMR Espace-DEV, la station SEAS-OI, station de recherche et d\'expertise en' \
-                            ' télédétection localisée à St Pierre (974), enregistre depuis 2015 de façon régulière les images brutes des satellites Sentinel-2 sur ' \
-                            'certaines zones du sud-ouest de l\'Océan Indien acquises par l\'ESA dans le cadre du programme Copernicus. L’UMR Espace- DEV hébergé à' \
-                            ' SEAS-OI a développé avec le CNES, la chaîne de traitement Sen2chain qui permet le calcul des produits Sentinel-2, L1C et L2A, ainsi que' \
-                            ' le calcul de huit indices environnementaux.\nLes séries d’indices environnementaux calculés par Sen2Chain depuis 2015 présentent un ' \
-                            'grand intérêt pour le suivi et l’observation du territoire dans la zone du sud-ouest de l’Océan Indien pour des projets scientifiques' \
-                            ' ou institutionnels en lien avec l\'écologie de la santé (SENS2MALARIA), le changement climatique et la gestion des risques naturels ' \
-                            'associés dans la région du sud ouest de l\'océan Indien (projet RenovRisk et la chaîne de traitement sur l’analyse des changements ' \
-                            'Sen2Change).\nLa couche au format shape permet de localiser et d\'accéder aux jeux de données des 3 indices calculés par Sen2chain: ' \
-                            'NDVI, NDWIGAO, MNDWI depuis septembre 2015 jusqu\'à maintenant à l\'Ile de la Réunion. Le lien vers ces jeux de données s\'effectue ' \
-                            'par l\'interface cartographique et le champ metadata et DOI qui donne accés à la fiche de métadonnées et au DOI associé à chaque jeu ' \
-                            'de données.',
-                    'Subject': 'theme[General]:G2OI,occupation du sol, télédétection, Indice'+', '+indice_name+"_\n"
-                               'theme[Geographic]:La Réunion, Maurice, Madagascar, Comores, Seychelles, Océan Indien',
-                    'Creator':[''],
-                    'Date': ['publication:' + str(date.today()) + '_\nedition:' + ''], # trouver des dates dans les données tuiles (date du fichier img etc)
-                    'Type': [''],  # tuiles : map, indice : map, tuile-indice : dataset
-                    'SpatialCoverage': [''],
-                    'TemporalCoverage': [''],  # last and first date of tile
-                    'Format': [''],
-                    'Relation': 'thumbnail:logo d\'Espace Dev@https://www.espace-dev.fr/wp-content/uploads/2020/03/Logo-Espace-Dev-coul.txt-copie.png_\n ' \
-                              'thumbnail:logo de SEAS-OI@http://www.seas-oi.org/image/layout_set_logo?img_id=16402&t=1653032230879_\n' \
-                              ' http:sen2extract[site web de SEAS pour la consultation des indices ]@http://indices.seas-oi.org/sen2extract/_\n' \
-                              ' http:[site copernicus sentinel-2]@https://sentinels.copernicus.eu/web/sentinel/missions/sentinel-2_\n ' \
-                              'http:[site tuiles sentinel-2]https://eatlas.org.au/data/uuid/f7468d15-12be-4e3f-a246-b2882a324f59_\n ' \
-                              'http:[site téléchargement tuiles sentinel-2]https://sentinel.esa.int/web/sentinel/missions/sentinel-2/data-products',
-                    'Rights':[''],
-                    'Provenance':'statement:La chaîne de traitement Sen2Chain utilise le KML fournit par l\'ESA. A partir de ce KML, un shape est généré pour les zones ' \
-                                'couvertes dans la zone de l\'Océan Indien pour l\'ensemble des indices fourniés par Sen2Chain. Nous sélectionnons depuis le shape de ' \
-                                'Sen2Chain à partir d\'une requête SQL, la tuile 40KCB correspondant au territoire de la Réunion de ce shape dans laquelle nous ' \
-                                'retrouvons le lien vers la métadonnées pour les 3 indices NDVI, NDWIGAO, MNDWI. Un champ metadata et un champ DOI permettent ' \
-                                'd\'accéder aux jeux de données correspondants.',
-                    'Data': ['access:default_\n' +
-                             'sourceType:other_\n' +
-                             'source:_\n' +
-                             'uploadType:other_\n' +
-                             'uploadSource:']  # links to imgs
-                })
-            ])
+    for i in range(0, df.shape[0]):
+        description = df.iloc[i, 2].split(':')[1]
+        provenance = df.iloc[i, 13].split(':')[1]
 
-    #md_output = pandas.merge(md_static_content, md_dynamic_content, on='Type')
-    md_dynamic_content.to_csv('download/'+md_output_file_name+'.csv')
+        '''concat statement with description'''
+        df.iloc[i, 2] = 'abstract:'+description+"_\ninfo:" +provenance
 
-    # print(md_static_content.keys())
-    md_df = None
+    if tile in CROZET:
+        df = df.replace(to_replace='.PAYS.', value='Crozet Islands', regex=True)
+        df = df.replace(to_replace='.CONTINENT.', value='Antarctic', regex=True)
+    elif tile in EPARSES:
+        df = df.replace(to_replace='.PAYS.', value='Scattered Islands', regex=True)
+        df = df.replace(to_replace='.CONTINENT.', value='Antarctic', regex=True)
+    elif tile in EPARSES:
+        df = df.replace(to_replace='.PAYS.', value='Kerguelen Islands', regex=True)
+        df = df.replace(to_replace='.CONTINENT.', value='Antarctic', regex=True)
+    elif tile in MADAGASCAR:
+        df = df.replace(to_replace='.PAYS.', value='Madagascar', regex=True)
+        df = df.replace(to_replace='.CONTINENT.', value='Indian Ocean', regex=True)
+    elif tile in MAURICE:
+        df = df.replace(to_replace='.PAYS.', value='Mauritius', regex=True)
+        df = df.replace(to_replace='.CONTINENT.', value='Indian Ocean', regex=True)
+    elif tile in REUNION:
+        df = df.replace(to_replace='.PAYS.', value='Réunion', regex=True)
+        df = df.replace(to_replace='.CONTINENT.', value='Indian Ocean', regex=True)
+    elif tile in RODRIGUES:
+        df = df.replace(to_replace='.PAYS.', value='Raudrigues', regex=True)
+        df = df.replace(to_replace='.CONTINENT.', value='Indian Ocean', regex=True)
+    elif tile in SEYCHELLES:
+        df = df.replace(to_replace='.PAYS.', value='Seychelles', regex=True)
+        df = df.replace(to_replace='.CONTINENT.', value='Indian Ocean', regex=True)
+    elif tile in SEYCHELLES:
+        df = df.replace(to_replace='.PAYS.', value='Seychelles', regex=True)
+        df = df.replace(to_replace='.CONTINENT.', value='Indian Ocean', regex=True)
+    elif tile in TROMELIN:
+        df = df.replace(to_replace='.PAYS.', value='Tromelin', regex=True)
+        df = df.replace(to_replace='.CONTINENT.', value='Indian Ocean', regex=True)
+
+    df.to_csv('download/METADATA_'+tile+'.csv', index=False)
+    print('download/METADATA_'+tile+'.csv created')
+
+
+def zip_dir(dir: Union[Path, str], filename: Union[Path, str], wd: str):
+    """Zip the provided directory without navigating to that directory using `pathlib` module"""
+    # Convert to Path object
+    dir = Path(dir)
+
+    print('Creating '+filename+' for '+wd)
+
+    with zipfile.ZipFile(filename, "w", zipfile.ZIP_DEFLATED) as zip_file:
+        for entry in dir.rglob(wd):
+            zip_file.write(entry, entry.relative_to(dir))
+
+
+# def update_atr_tabl_shp():
+#     db = dbf.Dbf("your_file.dbf")
+#
+#    ''' Editing a value, assuming you want to edit the first field of the first record'''
+#     rec = db[0]
+#     rec["FIRST_FIELD"] = "New value"
+#     rec.store()
+#     del rec
+#     db.close()
+
+
+def zenodo_upload(metadata_path: str):
+    datatogeoflow_folder = '/home/csouton/Documents/OSUR/pythonProject'
+    os.chdir(datatogeoflow_folder)
+
+    # Optional : could start from here => reload dataframe from csv
+    df = {}
+    # "/home/csouton/Documents/geoflow/test_corentin/metadata/seasoi/METADATA_SEN2CHAIN_40KCB_py.csv"
+    df = pandas.read_csv(metadata_path)
+
+    print("#### Upload zip files to Zenodo")
+    base_url = "https://zenodo.org/api/"
+    for zipul in range(len(df)):
+        zenodo_baseurl = base_url
+        input = 'weird'
+        # data_zip = df.iloc[zipul]['Data'].split('_\n')[0].split('@')[0].split(':')[1]
+        data_zip = [df.iloc[zipul]['Data'].split('_\n')[0].split('@')[1]]
+        print('data source = ', data_zip[0])
+        print("Initialize deposit")
+        r = check_token(zenodo_baseurl, ACCESS_TOKEN)
+        zenval = zenvar(r)
+        print("prereserved doi:" + zenval[1])
+        print("Write DOI to dataframe")
+        dfzen = df
+        if 'id:' in dfzen.iloc[zipul]['Identifier']:
+            pass
+        else:
+            dfzen.iloc[zipul, dfzen.columns.get_loc('Identifier')] = "id:" + dfzen.iloc[zipul][
+                'Identifier'] + "_\ndoi:" + zenval[1]
+            dfzen.iloc[zipul, dfzen.columns.get_loc("Provenance")] = dfzen.iloc[zipul][
+                                                                         "Provenance"] + "_\nprocess:Raw dataset uploaded to " + \
+                                                                     base_url.split('api')[0] + "record/" + str(
+                zenval[2])
+        print("upload data")
+        zen_upload = zenul(zenval[0], ACCESS_TOKEN,
+                           input, data_zip)
+
+        print("Enrich upload with metadata")
+        zen_metadata = zenmdt(zenodo_baseurl, ACCESS_TOKEN, zenval[2], df, zipul)
+        zen_metadata.text
+
+
+def print_menu(list_menu_options):
+    for key in list_menu_options.keys():
+        print (key, '--', list_menu_options[key] )
+
+
+def gsheet_to_df(region):
+    try:
+        gc = gspread.service_account(filename='sodium-replica-389612-2dec563dbdbb.json')
+
+        # read data and put it in a dataframe
+        spreadsheet = gc.open_by_url(
+            'https://docs.google.com/spreadsheets/d/1MKOzmW6nuI9HB0ry051O2NSnXcbvUbzVsVEX0epBnME/edit?usp=sharing')
+        # spreadsheet = gc.open_by_key('google_sheet_id')
+
+        ws = spreadsheet.worksheet('feuille 0')
+
+        df = pandas.DataFrame(ws.get_all_records())
+        print('gsheet fetched.')
+    except:
+        print('error while fecthing gsheet template')
+
+    try:
+        for t in region:
+            df_to_csv(df, t)
+    except:
+        print('error while creating csv matadata')
+
+def get_tiles_from_menu():
+    while (True):
+        print_menu(region_menu_options)
+        option = ''
+        region = []
+
+        option = input('Enter a tile identifier or choose region number: ')
+        y = len(option)
+        yy = option.isnumeric()
+        yyy = len(option)
+
+        if (len(option)-1 == 1 and option.isnumeric()) or len(option)-1 == 4:
+            if len(option)-1 == 4:
+                region = [option]
+                break
+            elif int(option) == 1:
+                region = CROZET
+                break
+            elif int(option) == 2:
+                region = EPARSES
+                break
+            elif int(option) == 3:
+                region = KERGUELEN
+                break
+            elif int(option) == 4:
+                region = MADAGASCAR
+                break
+            elif int(option) == 5:
+                region = MAURICE
+                break
+            elif int(option) == 6:
+                region = REUNION
+                break
+            elif int(option) == 7:
+                region = RODRIGUES
+                break
+            elif int(option) == 8:
+                region = SEYCHELLES
+                break
+            elif int(option) == 9:
+                region = TROMELIN
+                break
+            elif int(option) == 0:
+                break
+        else:
+            print('Wrong input. Please enter a tile identifier or a number between 0 and ',
+                  len(region_menu_options) - 1, '.')
+
+    return region
+
+def get_indice_from_menu():
+    option = ''
+
+    while (True):
+        option = input('Enter an indice identifier or 0 to cancel: ')
+        if option in list_indices:
+            return option
+        else:
+            if option == '0':
+                return ''
+            else:
+                print('Wrong input. Please enter an indice identifier from among ' + str(list_indices)[1:-1])
 
 menu_options = {
     1: 'Create a general shp with the coverage of all tiles',
     2: 'Create a shp from indices',
-    3: 'Create a shp for a tile (or region)',
-    4: 'Create a csv metadata file with link to data',
+    3: 'Create a shp from region',
+    4: 'Create TILE.csv and .json for geoflow',
     5: 'Create netcdf from jp2',
+    6: 'Create archive from Indice-Tile time serie',
+    7: 'Export TILE_INDICE to zenodo using python',
+    8: 'Export TILE_INDICE to zenodo using geoflow',
     0: 'Exit',
 }
 
-def print_menu():
-    for key in menu_options.keys():
-        print (key, '--', menu_options[key] )
+region_menu_options = {
+    1: 'Crozet : '+ str(CROZET)[1:-1],
+    2: 'Eparses :'+ str(EPARSES)[1:-1],
+    3: 'Kerguelen : '+str(KERGUELEN)[1:-1],
+    4: 'Madagascar',
+    5: 'Maurice : '+ str(MAURICE)[1:-1],
+    6: 'Réunion :' + str(REUNION)[1:-1],
+    7: 'Rodrigues :'+ str(RODRIGUES)[1:-1],
+    8: 'Seychelles : '+ str(SEYCHELLES)[1:-1],
+    9: 'Tromelin :'+ str(TROMELIN)[1:-1],
+    0: 'Cancel'
+}
 
-'''Shapefile operations'''
-def shp_total():
-    try:
-        get_processed_tiles_total_vect('')
-        print('general shp created.')
-    except:
-        print('error while creating general shp file.')
-
-def shp_indices():
-    try:
-        get_processed_indices_vect('')
-        print('shp by indices created.')
-    except:
-        print('error while creating shp by indices.')
-def shp_tuile(tile_name):
-    try:
-        get_processed_tile_vect('download/shp', tile_name)
-        print('shp by tile created.')
-    except:
-        print('error while creating shp by tile')
-
-def csv_tuile_indice(indices_tiles):
-    try:
-        create_metadata_csv_file(indices_tiles, 'METADATA_SEN2CHAIN', 'download/METADATA_SEN2CHAIN_tuiles-indices_static.csv')
-        print('metadata file created.')
-    except:
-        print('error while creating metadata file')
+list_indices = {
+    'NDVI',
+    'NDWIGAO',
+    'NDWIMCF',
+    'MNDWI',
+    'IRECI',
+    'NDRE',
+    'EVI',
+    'BIBG',
+    'BIGR',
+    'BIRNIR',
+    'NBR'
+}
 
 if __name__ == '__main__':
     os.environ['HDF5_USE_FILE_LOCKING'] = 'FALSE'  # disable all file locking operations used in HDF5
@@ -384,10 +596,9 @@ if __name__ == '__main__':
         username=ids[1],
         password=ids[2]
     )
+    file.close()
 
-    # 38KQE Madagascar - 40KCB Réunion
-    #indices_tiles = {'NDVI': ['40KCB'], 'NDWIGAO': ['40KCB'], 'MNDWI': ['40KCB']}
-    #download_sentinel1_indices(sftp, indices_tiles)
+    # download_sentinel1_indices(sftp, indices_tiles)
 
     logo_g2oi = """
         /$$$$$$   /$$$$$$   /$$$$$$  /$$$$$$
@@ -417,10 +628,11 @@ pour la valorisation et l'accès aux données issues
     print(logo_g2oi)
     print(logo_sen2val)
 
+
     while (True):
 
         print('\n===============\n')
-        print_menu()
+        print_menu(menu_options)
         option = ''
         try:
             option = int(input('Choose an operation: '))
@@ -428,23 +640,168 @@ pour la valorisation et l'accès aux données issues
             print('Wrong input. Please enter a number ... ')
         if option == 1:
             shp_total()
+
         elif option == 2:
             shp_indices()
+
         elif option == 3:
-            tn = '38LRK'
-            shp_tuile(tn)
+            region = get_tiles_from_menu()
+            if len(region) > 0:
+                for t in region:
+                    shp_tuile(t)
+
         elif option == 4:
-            # 38LRK Madagascar - 40KCB Réunion
-            ti = {'NDVI': ['38LRK'], 'NDWIGAO': ['38LRK'], 'MNDWI': ['38LRK']}
-            csv_tuile_indice(ti)
+            content = {}
+            true = 'true'
+            false = 'false'
+
+            region = get_tiles_from_menu()
+
+            if len(region) > 0:
+                for t in region:
+                    content = {
+                        "profile": {
+                            "id": "sens2val_" + t + "_metadata",
+                            "project": "SEAS-OI - Sens2Chain",
+                            "name": "Séries temporelle générés sur la tuile " + t,
+                            "organization": "ESPACE-DEV",
+                            "logos": [
+                                "https://drive.google.com/uc?id=1RSMBdke2znvwtvhoM5evr-1rUesPLH-j"
+                            ],
+                            "mode": "entity",
+                            "options": {
+                                "line_separator": "_\n"
+                            }
+                        },
+                        "metadata": {
+                            "entities": {
+                                "handler": "csv",
+                                "source": "/DATA/S2/PRODUCTS/GEOFLOW/metadata/METADATA_" + t + ".csv"
+                            },
+                            "contacts": {
+                                "handler": "{{METADATA_CONTACTS_HANDLER}}",
+                                "source": "{{METADATA_CONTACTS}}"
+                            }
+                        },
+                        "software": [
+                            {
+                                "id": "seasoi-geonetwork",
+                                "type": "output",
+                                "software_type": "geonetwork",
+                                "parameters": {
+                                    "url": "{{GEONETWORK_SEASOI_URL}}",
+                                    "user": "{{GEONETWORK_USER}}",
+                                    "pwd": "{{GEONETWORK_PASSWORD}}",
+                                    "version": "4.2.1",
+                                    "logger": "DEBUG"
+                                }
+                            },
+                            {
+                                "id": "googledrive",
+                                "type": "input",
+                                "software_type": "googledrive",
+                                "parameters": {
+                                    "email": "{{GMAIL_USER}}",
+                                    "token": ""
+                                },
+                                "properties": {}
+                            },
+                            {
+                                "id": "seasoi-geoserver",
+                                "type": "output",
+                                "software_type": "geoserver",
+                                "parameters": {
+                                    "url": "{{GEOSERVER_SEASOI_URL}}",
+                                    "user": "{{GEOSERVER_USER}}",
+                                    "pwd": "{{GEOSERVER_PASSWORD}}",
+                                    "logger": "DEBUG"
+                                },
+                                "properties": {
+                                    "workspace": "REGION_REUNION"
+                                }
+                            },
+                            {
+                                "id": "zenodo",
+                                "type": "output",
+                                "software_type": "zenodo",
+                                "parameters": {
+                                    "url": "https://zenodo.org/api",
+                                    "token": "{{ ZENODO_SANDBOX_TOKEN }}",
+                                    "logger": "DEBUG"
+                                },
+                                "properties": {
+                                    "clean": {
+                                        "run": false
+                                    }
+                                }
+                            }
+                        ],
+                        "actions": [
+                            {
+                                "id": "geometa-create-iso-19115",
+                                "options": {
+                                    "logo": false
+                                },
+                                "run": true
+                            },
+                            {
+                                "id": "geonapi-publish-iso-19139",
+                                "run": true
+                            },
+                            {
+                                "id": "geosapi-publish-ogc-services",
+                                "run": false,
+                                "options": {
+                                    "createWorkspace": true,
+                                    "createStore": true,
+                                    "overwrite_upload": false
+                                }
+                            },
+                            {
+                                "id": "zen4R-deposit-record",
+                                "run": true,
+                                "options": {
+                                    "update_files": true,
+                                    "depositWithFiles": true,
+                                    "deleteOldFiles": true,
+                                    "publish": false
+                                }
+                            }
+                        ]
+                    }
+
+                    with open('/DATA/S2/PRODUCTS/GEOFLOW/json/sen2val'+t+'.json', "w", encoding='utf-8') as write_file:
+                        json.dump(content, write_file)
+
+                gsheet_to_df(region)
+
         elif option == 5:
             src_path = 'download/src/'
             output_dir_path = 'download/nc/'
             indices_tiles = {'NDVI': ['38LRK']}
             sen2chain_to_netcdf(src_path, indices_tiles, output_dir_path)
-            
+
+        elif option == 6:
+            temporal_coverage = ['2015', '2016', '2017', '2018', '2019', '2020', '2021', '2022', '2023']
+
+            indice = get_indice_from_menu()
+
+            if indice != '':
+                region = get_tiles_from_menu()
+                for t in region:
+                    src_path = '/home/csouton/sen2chain_data/data/INDICES/' + indice + '/' + t
+                    for year in temporal_coverage:
+                        zip_dir(src_path, 'download/'+indice + '_' + t + '_' + year + '.zip', '*' + year + '*')
+
+        elif option == 7:
+            region = get_tiles_from_menu()
+            for t in region:
+                zenodo_upload('download/METADATA_'+t+'.csv')
+
+
         elif option == 0:
             print('Exiting')
             exit()
+
         else:
             print('Invalid option. Please enter a number between 0 and ', len(menu_options)-1, '.')
