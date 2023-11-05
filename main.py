@@ -128,7 +128,31 @@ def download_sentinel1_indices(sftp: Sftp, indices_tiles: dict, path_to_dl: str 
 
 
 def create_netcdf(indice_name: str, tile_name : str, start_year: int, path_to_create: str, nc_file_name: str, y_size: int = 0, x_size: int = 0, times_size: int = 0, crs_code:str = '', wkt:str = ''):
+    """Create an empty netCDF with given dimension lengths
 
+        Parameters
+        ----------
+        indice_name : str
+            Band name
+        tile_name : str
+            tile id
+        start_year : int
+            Year value that start the time serie
+        path_to_create : str
+            Path to the netCDF file
+        nc_file_name : str
+            Name of the netCDF file with extension
+        y_size : int, optional
+            y dimension length
+        x_size : int, optional
+            x dimension length
+        times_size : int, optional
+            time dimension length
+        crs_code : str, optional
+            Code of the coordonates representation system. Found in the JPEG2000 header
+        wkt : str, optional
+            Spatial representation metadata. Found in the JPEG2000 header
+        """
     os.makedirs(path_to_create, exist_ok=True)
 
     '''creating empty netcdf'''
@@ -209,7 +233,27 @@ def create_netcdf(indice_name: str, tile_name : str, start_year: int, path_to_cr
 
 
 def concat_jpeg_to_netcdf(indice_name: str, tile_name: str, time_index: int, path_jp2: str, output_path: str, nc_file_name:str, ds_nc, time_size: int = 0, overwrite:bool = False):
-
+    """Concat a JPEG2000 file into an existing netCDF or create a new one
+            Parameters
+            ----------
+            indice_name : str
+                indice id
+            tile_name : str
+                tile id
+            time_index : str
+                index of the image from the netCDF time serie tab
+            path_jp2 : str
+                path of the JPEG2000 source file to add
+            output_path : str
+                name and path of the output netCDF file
+            ds_nc :
+                netCDF dataset to concat at if it already exists
+            time_size : int, optional
+                length of the time serie dimension
+            overwrite : bool, optional
+                Overwrite a time serie for the given date if it's correspond to an already existing time serie
+                default = false, skipping time serie with the given date and only add data after
+            """
     nc_path = output_path + nc_file_name
 
     img = rasterio.open(path_jp2, driver='JP2OpenJPEG')
@@ -279,13 +323,25 @@ def concat_jpeg_to_netcdf(indice_name: str, tile_name: str, time_index: int, pat
 
 
 def sen2chain_to_netcdf(src_path:str, indices_tiles: dict, output_dir_path: str, ext: str = '.jp2'):
+    """Create Netcdf time serie file based on JPEG2000 data directory
+        Parameters
+        ----------
+        src_path : str
+            Data directory path
+        indices_tiles : dict
+            {NDVI:[40KCB, 40KEC, ...], ...}
+        output_dir_path : str
+            Path to output nc file
+        ext : str
+            File extension filter string
+        """
     #TODO
-    # rajouter un '/' a la fin de src_path et de output_dir_path si le caractère n'est pas présent
+    # add un '/' at the end of src_path and output_dir_path if this char is not already there
 
     #TODO
     # donner un indice ou un tuile en param et boucler sur les jp2 trouvés
-    # 'please enter a indice code : '
-    # 'please enter a tile code : '
+    # 'enter a indice id : '
+    # 'enter a tile id : '
 
     ds = None
 
@@ -337,9 +393,16 @@ def concat_nc(nc_paths: list, concat_file_name: str, path_to_create: str = 'down
     ds_nc_concat.close()
 
 
-def df_to_csv(df, tile: str):
+def df_to_csv(df: pandas.DataFrame, tile: str):
+    """Convert a datadrame based on Geoflow template to a csv by replacing tagged variables based on the given tile id
+    Parameters
+    ----------
+    df : DataFrame
+        standard 15 columns Geolow DataFrame with 11 lignes (one by Indice)
+    tile : str
+        tile identifier
+    """
 
-    '''Formating template'''
     df['Data'] = ''
     df['SpatialCoverage'] = ''
 
@@ -352,9 +415,10 @@ def df_to_csv(df, tile: str):
         description = df.iloc[i, 2].split(':')[1]
         provenance = df.iloc[i, 13].split(':')[1]
 
-        '''concat statement with description'''
+        '''concat Provenance text with Description'''
         df.iloc[i, 2] = 'abstract:'+description+"_\ninfo:" +provenance
 
+        '''Add tags based on the localisation of the tile'''
     if tile in CROZET:
         df = df.replace(to_replace='.PAYS.', value='Crozet Islands', regex=True)
         df = df.replace(to_replace='.CONTINENT.', value='Antarctic', regex=True)
@@ -390,19 +454,30 @@ def df_to_csv(df, tile: str):
     print('download/METADATA_'+tile+'.csv created')
 
 
-def zip_dir(dir: Union[Path, str], filename: Union[Path, str], wd: str):
-    """Zip the provided directory without navigating to that directory using `pathlib` module"""
+def zip_dir(src_dir: Union[Path, str], filename: Union[Path, str], wd: str):
+    """Zip the provided time serie directory
+    Parameters
+    ----------
+    src_dir : str
+        Data directory path
+    filename : str
+        Path and name of the zip destination file
+    wd : str
+        File filter string
+    """
     # Convert to Path object
-    dir = Path(dir)
+    dir = Path(src_dir)
 
     print('Creating '+filename+' for '+wd)
 
+    # TODO
+    #  Do not create an empty zip while there is no data in the directory
     with zipfile.ZipFile(filename, "w", zipfile.ZIP_DEFLATED) as zip_file:
         for entry in dir.rglob(wd):
             zip_file.write(entry, entry.relative_to(dir))
 
 
-# def update_atr_tabl_shp():
+# def update_shp_atr_tabl():
 #     db = dbf.Dbf("your_file.dbf")
 #
 #    ''' Editing a value, assuming you want to edit the first field of the first record'''
@@ -414,6 +489,13 @@ def zip_dir(dir: Union[Path, str], filename: Union[Path, str], wd: str):
 
 
 def zenodo_upload(metadata_path: str):
+    """Push entities from a Geoflow csv to a Zenodo deposit
+
+        Parameters
+        ----------
+        matadata_path : str
+            Path to csv metadata
+        """
     datatogeoflow_folder = '/home/csouton/Documents/OSUR/pythonProject'
     os.chdir(datatogeoflow_folder)
 
@@ -459,18 +541,23 @@ def print_menu(list_menu_options):
         print (key, '--', list_menu_options[key] )
 
 
-def gsheet_to_df(region):
+def gsheet_to_df(region: list):
+    """Get gsheet Geoflow template and for given tiles, create completed csv
+    Parameters
+    ----------
+    region : list
+        List of tile ids
+    """
     try:
         gc = gspread.service_account(filename='sodium-replica-389612-2dec563dbdbb.json')
 
-        # read data and put it in a dataframe
+        '''read data and put it into a dataframe'''
         spreadsheet = gc.open_by_url(
             'https://docs.google.com/spreadsheets/d/1MKOzmW6nuI9HB0ry051O2NSnXcbvUbzVsVEX0epBnME/edit?usp=sharing')
         # spreadsheet = gc.open_by_key('google_sheet_id')
 
-        ws = spreadsheet.worksheet('feuille 0')
-
-        df = pandas.DataFrame(ws.get_all_records())
+        workingseet = spreadsheet.worksheet('feuille 0')
+        df = pandas.DataFrame(workingseet.get_all_records())
         print('gsheet fetched.')
     except:
         print('error while fecthing gsheet template')
@@ -480,6 +567,7 @@ def gsheet_to_df(region):
             df_to_csv(df, t)
     except:
         print('error while creating csv matadata')
+
 
 def get_tiles_from_menu():
     while (True):
@@ -530,6 +618,7 @@ def get_tiles_from_menu():
                   len(region_menu_options) - 1, '.')
 
     return region
+
 
 def get_indice_from_menu():
     option = ''
@@ -620,9 +709,7 @@ if __name__ == '__main__':
     \__ \  __/ | | |/ __/ \ V / (_| | |
     |___/\___|_| |_|_____| \_/ \__,_|_|
     ___________________________________
-Script mettant en place une chaîne de traitement 
-pour la valorisation et l'accès aux données issues
-            de sen2chain
+Script to complemet products of sen2chain data for Geoflow
         corentin.souton@ird.fr
     """
     print(logo_g2oi)
@@ -650,6 +737,7 @@ pour la valorisation et l'accès aux données issues
                 for t in region:
                     shp_tuile(t)
 
+            '''Create TILE.csv and .json for geoflo'''
         elif option == 4:
             content = {}
             true = 'true'
@@ -775,12 +863,14 @@ pour la valorisation et l'accès aux données issues
 
                 gsheet_to_df(region)
 
+            '''Create netcdf from jp2'''
         elif option == 5:
             src_path = 'download/src/'
             output_dir_path = 'download/nc/'
             indices_tiles = {'NDVI': ['38LRK']}
             sen2chain_to_netcdf(src_path, indices_tiles, output_dir_path)
 
+            '''Create archive from Indice-Tile time serie'''
         elif option == 6:
             temporal_coverage = ['2015', '2016', '2017', '2018', '2019', '2020', '2021', '2022', '2023']
 
@@ -793,11 +883,11 @@ pour la valorisation et l'accès aux données issues
                     for year in temporal_coverage:
                         zip_dir(src_path, 'download/'+indice + '_' + t + '_' + year + '.zip', '*' + year + '*')
 
+            '''Export TILE_INDICE to zenodo using python'''
         elif option == 7:
             region = get_tiles_from_menu()
             for t in region:
                 zenodo_upload('download/METADATA_'+t+'.csv')
-
 
         elif option == 0:
             print('Exiting')
