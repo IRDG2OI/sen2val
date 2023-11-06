@@ -363,13 +363,30 @@ def df_to_csv(df, tile: str):
     """
 
     '''Formating template'''
-    df['Data'] = ''
     df['SpatialCoverage'] = ''
 
     df = df.replace(to_replace='.TUILE.', value=tile, regex=True)
     df = df.replace(to_replace='.DATE\]', value=date.today().strftime('%Y-%m-%d'), regex=True)
     df = df.replace(to_replace='.DATE_D.', value='2015', regex=True)
     df = df.replace(to_replace='.DATE_F.', value='2023', regex=True)
+
+    '''Add zip data'''
+    data_source = 'source:/DATA/S2/PRODUCTS/GEOFLOW/data/zip/'
+    data_upload_source = 'uploadSource:'
+    indice = ''
+    temporal_coverage = ['2015', '2016', '2017', '2018', '2019', '2020', '2021', '2022', '2023']
+    for i in range(0, df.shape[0]):
+        indice = df.iloc[i, 0].split('_')[3] #get indice from identifier cel
+
+        for y in temporal_coverage:
+            if y == temporal_coverage[-1]:
+                data_source = data_source + indice +'_'+tile+'_'+y+".zip_\n"
+                data_upload_source = data_upload_source + indice +'_'+tile+'_'+y+".zip_\n"
+            else:
+                data_source = data_source + indice + '_' + tile + '_' + y + '.zip,'
+                data_upload_source = data_upload_source + indice +'_'+tile+'_'+y+".zip,"
+
+        df.iloc[i, 15] = data_source+"sourceType:other_\n"+data_upload_source+"uploadType:other_\n"+"sourceZip:false"
 
     # '''concat statement with description'''
     # for i in range(0, df.shape[0]):
