@@ -85,7 +85,31 @@ def find(pattern, path):
 
 '''NetCDF operations'''
 def create_netcdf(indice_name: str, tile_name : str, start_year: int, path_to_create: str, nc_file_name: str, y_size: int = 0, x_size: int = 0, times_size: int = 0, crs_code:str = '', wkt:str = ''):
+    """Create an empty netCDF with given dimension lengths
 
+        Parameters
+        ----------
+        indice_name : str
+            Band name
+        tile_name : str
+            tile id
+        start_year : int
+            Year value that start the time serie
+        path_to_create : str
+            Path to the netCDF file
+        nc_file_name : str
+            Name of the netCDF file with extension
+        y_size : int, optional
+            y dimension length
+        x_size : int, optional
+            x dimension length
+        times_size : int, optional
+            time dimension length
+        crs_code : str, optional
+            Code of the coordonates representation system. Found in the JPEG2000 header
+        wkt : str, optional
+            Spatial representation metadata. Found in the JPEG2000 header
+        """
     os.makedirs(path_to_create, exist_ok=True)
 
     '''creating empty netcdf'''
@@ -166,7 +190,27 @@ def create_netcdf(indice_name: str, tile_name : str, start_year: int, path_to_cr
 
 
 def concat_jpeg_to_netcdf(indice_name: str, tile_name: str, time_index: int, path_jp2: str, output_path: str, nc_file_name:str, ds_nc, time_size: int = 0, overwrite:bool = False):
-
+    """Concat a JPEG2000 file into an existing netCDF or create a new one
+            Parameters
+            ----------
+            indice_name : str
+                indice id
+            tile_name : str
+                tile id
+            time_index : str
+                index of the image from the netCDF time serie tab
+            path_jp2 : str
+                path of the JPEG2000 source file to add
+            output_path : str
+                name and path of the output netCDF file
+            ds_nc :
+                netCDF dataset to concat at if it already exists
+            time_size : int, optional
+                length of the time serie dimension
+            overwrite : bool, optional
+                Overwrite a time serie for the given date if it's correspond to an already existing time serie
+                default = false, skipping time serie with the given date and only add data after
+            """
     nc_path = output_path + nc_file_name
 
     img = rasterio.open(path_jp2, driver='JP2OpenJPEG')
@@ -236,6 +280,19 @@ def concat_jpeg_to_netcdf(indice_name: str, tile_name: str, time_index: int, pat
 
 
 def sen2chain_to_netcdf(src_path:str, indices: list, tiles: list, output_dir_path: str, ext: str = '.jp2'):
+    """Create Netcdf time serie file based on JPEG2000 data directory
+        Parameters
+        ----------
+        src_path : str
+            Data directory path
+        indices_tiles : dict
+            {NDVI:[40KCB, 40KEC, ...], ...}
+        output_dir_path : str
+            Path to output nc file
+        ext : str
+            File extension filter string
+        """
+
     #TODO
     # rajouter un '/' a la fin de src_path et de output_dir_path si le caractère n'est pas présent
 
@@ -296,6 +353,14 @@ def concat_nc(nc_paths: list, concat_file_name: str, path_to_create: str = 'down
 
 '''Metadata operations'''
 def df_to_csv(df, tile: str):
+    """Convert a dataframe based on Geoflow template to a csv by replacing tagged variables based on the given tile id
+    Parameters
+    ----------
+    df : DataFrame
+        standard 15 columns Geolow DataFrame with 11 lignes (one by Indice)
+    tile : str
+        tile identifier
+    """
 
     '''Formating template'''
     df['Data'] = ''
@@ -349,6 +414,12 @@ def df_to_csv(df, tile: str):
 
 
 def gsheet_to_df(region):
+    """Get gsheet Geoflow template and for given tiles, create completed csv
+    Parameters
+    ----------
+    region : list
+        List of tile ids
+    """
     try:
         gc = gspread.service_account(filename='sodium-replica-389612-2dec563dbdbb.json')
 
@@ -373,18 +444,36 @@ def gsheet_to_df(region):
 
 '''Data operations'''
 def zip_dir(dir: Union[Path, str], filename: Union[Path, str], wd: str):
-    """Zip the provided directory without navigating to that directory using `pathlib` module"""
+    """Zip the provided time serie directory
+    Parameters
+    ----------
+    src_dir : str
+        Data directory path
+    filename : str
+        Path and name of the zip destination file
+    wd : str
+        File filter string
+    """
     # Convert to Path object
     dir = Path(dir)
 
     print('Creating '+filename)
 
+    # TODO
+    #  Do not create an empty zip while there is no data in the directory
     with zipfile.ZipFile(filename, "w", zipfile.ZIP_DEFLATED) as zip_file:
         for entry in dir.rglob(wd):
             zip_file.write(entry, entry.relative_to(dir))
 
 
 def zenodo_upload(metadata_path: str):
+    """Push entities from a Geoflow csv to a Zenodo deposit
+
+        Parameters
+        ----------
+        matadata_path : str
+            Path to csv metadata
+        """
     datatogeoflow_folder = '/home/g2oi/sen2val'
     os.chdir(datatogeoflow_folder)
 
